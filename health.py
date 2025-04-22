@@ -288,7 +288,7 @@ def get_garmin_df(
 
 
 @app.cell
-def _(Path, garmin_activities, pl):
+def save_garmin_data(Path, garmin_activities, pl):
     current_garmin_data = garmin_activities
     _fn = 'all_health_garmin'
     if Path(_fn).exists():
@@ -310,32 +310,44 @@ def _(current_garmin_data, mo):
 
 @app.cell
 def _(alt, current_garmin_data, pl):
-    # Prepare the data by converting heart rate zone durations from seconds to minutes
-    monthly_data = current_garmin_data \
-        .with_columns(pl.col("dt").dt.truncate("1mo").alias("month")).group_by("month").agg([
-            (pl.col("secsInZone1") / 60).median().alias("Zone 1"),
-            (pl.col("secsInZone2") / 60).median().alias("Zone 2"),
-            (pl.col("secsInZone3") / 60).median().alias("Zone 3"),
-            (pl.col("secsInZone4") / 60).median().alias("Zone 4"),
-            (pl.col("secsInZone5") / 60).median().alias("Zone 5"),
+    monthly_median_zones = (current_garmin_data
+        .with_columns([
+            pl.col("dt").dt.truncate("1mo").alias("month"),
+            (pl.col("secsInZone5") / 60),
+            (pl.col("secsInZone4") / 60),
+            (pl.col("secsInZone3") / 60),
+            (pl.col("secsInZone2") / 60),
+            (pl.col("secsInZone1") / 60),
         ])
-
-    # Create the stacked bar chart
-    chart = alt.Chart(monthly_data).transform_fold(
-        ["Zone 0", "Zone 1", "Zone 2", "Zone 3", "Zone 4", "Zone 5"],
-        as_=["Heart Rate Zone", "Median Seconds"]
-    ).mark_bar().encode(
-        x=alt.X("month:T", title="Month"),
-        y=alt.Y("Median Seconds:Q", title="Median Seconds"),
-        color=alt.Color("Heart Rate Zone:N", title="Heart Rate Zone"),
-        tooltip=["month:T", "Heart Rate Zone:N", "Median Seconds:Q"]
-    ).properties(
-        title="Median Heart Rate Zone Duration per Month"
+        .group_by("month")
+        .agg([
+            pl.col("secsInZone1").median().alias("median_zone5"),
+            pl.col("secsInZone2").median().alias("median_zone4"),
+            pl.col("secsInZone3").median().alias("median_zone3"),
+            pl.col("secsInZone4").median().alias("median_zone2"),
+            pl.col("secsInZone5").median().alias("median_zone1"),
+        ])
     )
 
-    # chart
+    # Create stacked bar plot
+    monthly_median_zones_chart = alt.Chart(monthly_median_zones).transform_fold(
+        ["median_zone5", "median_zone4", "median_zone3", "median_zone2", "median_zone1"],
+        as_=['zone', 'median_time']
+    ).mark_bar().encode(
+        x=alt.X('yearmonth(month):T', title='Månad'),
+        y=alt.Y('median_time:Q', title='Median tid i minuter'),
+        color=alt.Color('zone:N', scale=alt.Scale(
+            domain=['median_zone5', 'median_zone4', 'median_zone3', 'median_zone2', 'median_zone1'], 
+            range=['gray', 'lightblue', 'green', 'orange', 'red']), title='Heart Rate Zones'),
+        tooltip=['month:T', 'zone:N', 'median_time:Q']
+    ).properties(
+        title='Median tid i puls zoner per månad',
+        width=600,
+        height=400
+    )
 
-
+    monthly_median_zones_chart
+    # monthly_median_zones
     return
 
 
