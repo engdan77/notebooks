@@ -42,7 +42,7 @@ def imports():
     return Path, alt, datetime, dotenv, mo, os, pl
 
 
-@app.cell
+@app.cell(hide_code=True)
 def create_logger():
     import logging
 
@@ -72,7 +72,7 @@ def _(dotenv, os):
     return password, username
 
 
-@app.cell
+@app.cell(hide_code=True)
 def form(mo):
     form = mo.md('''
     Date range: {date_range}
@@ -84,7 +84,7 @@ def form(mo):
     return (form,)
 
 
-@app.cell
+@app.cell(hide_code=True)
 def get_date_range_from_form(datetime, form, mo):
     mo.stop(form.value is None, mo.md('Fyll i data'))
     start_date, end_date = form.value['date_range']
@@ -93,7 +93,7 @@ def get_date_range_from_form(datetime, form, mo):
     return (date_range_iso,)
 
 
-@app.cell
+@app.cell(hide_code=True)
 def garmin_login(logger, password, username):
     from garminconnect import Garmin
     logger.debug('Logging in to Garmin')
@@ -174,7 +174,7 @@ def get_garmin_raw_data(datetime, gc, logger, mo):
 
 
 @app.cell(hide_code=True)
-def get_garmin_df(
+def get_garmin_df_and_filter(
     RawGarminData,
     date_range_iso,
     datetime,
@@ -282,12 +282,12 @@ def get_garmin_df(
         mo.stop(True, mo.md(m))
     # Move dt column to 1st and sort by it
     cols = garmin_activities.columns
-    garmin_activities = garmin_activities.select(["dt"] + [col for col in cols if col != "dt"]).sort(by="dt")
+    garmin_activities = garmin_activities.select(["dt"] + [col for col in cols if col != "dt"]).sort(by="dt").filter(pl.col('distance') > 1000)
 
     return displayed_years, garmin_activities
 
 
-@app.cell
+@app.cell(hide_code=True)
 def save_garmin_data(Path, garmin_activities, pl):
     current_garmin_data = garmin_activities
     _fn = 'all_health_garmin'
@@ -302,15 +302,37 @@ def save_garmin_data(Path, garmin_activities, pl):
 
 
 @app.cell
-def _(current_garmin_data, mo):
-    selected_activites = mo.ui.table(current_garmin_data)
-    selected_activites
+def explore_garmin_dataset(current_garmin_data, mo):
+    mo.ui.dataframe(current_garmin_data, page_size=30)
     return
 
 
-@app.cell
-def _(alt, current_garmin_data, pl):
-    monthly_median_zones = (current_garmin_data
+@app.cell(hide_code=True)
+def get_activities_as_chart(current_garmin_data, pl):
+    activities_dist = current_garmin_data.rename({"activityType.typeKey": 'activity'}).group_by(pl.col('activity')).agg(pl.len().alias('count'))
+    activities_dist.plot.bar(x='activity', y='count')
+    return (activities_dist,)
+
+
+@app.cell(hide_code=True)
+def select_activity_for_pulse_zones_chart(activities_dist, mo):
+    activity_types_ = activities_dist.select('activity').to_series().to_list()
+    activity_for_zones = mo.ui.dropdown(activity_types_, label='Aktivitet för se pulszoner')
+    activity_for_zones
+    return (activity_for_zones,)
+
+
+@app.cell(hide_code=True)
+def get_median_pulse_zones_chart(
+    activity_for_zones,
+    alt,
+    current_garmin_data,
+    mo,
+    pl,
+):
+    mo.stop(activity_for_zones is None, 'Välj aktivitet för zoner')
+
+    monthly_median_zones = (current_garmin_data.filter(pl.col('activityType.typeKey') == activity_for_zones.value)
         .with_columns([
             pl.col("dt").dt.truncate("1mo").alias("month"),
             (pl.col("secsInZone5") / 60),
@@ -348,6 +370,34 @@ def _(alt, current_garmin_data, pl):
 
     monthly_median_zones_chart
     # monthly_median_zones
+    return (monthly_median_zones_chart,)
+
+
+@app.cell
+def _(activity_for_zones, current_garmin_data, pl):
+
+
+    _df_speed = current_garmin_data.filter(pl.col('activityType.typeKey') == activity_for_zones.value).select('dt', ((pl.col('duration')/60)/(pl.col('distance')/1000)).alias('mins_per_km'))
+
+    chart_data_mins_per_km = _df_speed.with_columns(pl.col('dt').dt.truncate('1mo').alias('month')).group_by('month').agg(pl.col('mins_per_km').mean().alias('mean_mins_per_km'))
+
+    chart_data_mins_per_km
+    # _chart_data.plot.line(x='month:T', y='mins_per_km:Q')
+    return (chart_data_mins_per_km,)
+
+
+@app.cell
+def _(chart_data_mins_per_km, monthly_median_zones_chart):
+    first_dt_in_zone_chart = monthly_median_zones_chart.data['month'].first()
+    last_dt_in_zone_chart = monthly_median_zones_chart.data['month'].last()
+
+    chart_data_mins_per_km.plot.line(x='month:T', y='mean_mins_per_km')
+    return
+
+
+@app.cell
+def _(alt, chart_data_mins_per_km):
+    chart_data_mins_per_km.plot.line(x=alt.X('month:T', scale=alt.Scale(domain=['2021-01-01', '2025-03-01'])), y=alt.Y('mean_mins_per_km', scale=alt.Scale(domain=[3, 13])))
     return
 
 
