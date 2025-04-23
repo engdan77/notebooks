@@ -98,7 +98,7 @@ def garmin_login(logger, password, username):
     from garminconnect import Garmin
     logger.debug('Logging in to Garmin')
     gc = Garmin(username, password)
-    gc.login()
+    gc_login = gc.login()
     return (gc,)
 
 
@@ -310,7 +310,7 @@ def explore_garmin_dataset(current_garmin_data, mo):
 @app.cell(hide_code=True)
 def get_activities_as_chart(current_garmin_data, pl):
     activities_dist = current_garmin_data.rename({"activityType.typeKey": 'activity'}).group_by(pl.col('activity')).agg(pl.len().alias('count'))
-    activities_dist.plot.bar(x='activity', y='count')
+    activities_dist.plot.bar(x='activity', y='count').properties(height=100)
     return (activities_dist,)
 
 
@@ -368,9 +368,7 @@ def get_median_pulse_zones_chart(
         height=400
     )
 
-    monthly_median_zones_chart
-    # monthly_median_zones
-    return (monthly_median_zones_chart,)
+    return monthly_median_zones, monthly_median_zones_chart
 
 
 @app.cell
@@ -387,18 +385,56 @@ def _(activity_for_zones, current_garmin_data, pl):
 
 
 @app.cell
-def _(chart_data_mins_per_km, monthly_median_zones_chart):
-    first_dt_in_zone_chart = monthly_median_zones_chart.data['month'].first()
-    last_dt_in_zone_chart = monthly_median_zones_chart.data['month'].last()
-
-    chart_data_mins_per_km.plot.line(x='month:T', y='mean_mins_per_km')
+def _(median_km_per_hour_chart, monthly_median_zones_chart):
+    monthly_median_zones_chart & median_km_per_hour_chart
     return
 
 
 @app.cell
-def _(alt, chart_data_mins_per_km):
-    chart_data_mins_per_km.plot.line(x=alt.X('month:T', scale=alt.Scale(domain=['2021-01-01', '2025-03-01'])), y=alt.Y('mean_mins_per_km', scale=alt.Scale(domain=[3, 13])))
-    return
+def chart_zones_and_speed(
+    activity_for_zones,
+    alt,
+    chart_data_mins_per_km,
+    mo,
+    monthly_median_zones,
+    monthly_median_zones_chart,
+    pl,
+):
+    '''
+    This example will enforce pan/zoom that is not desired - so lean towards using Altair object
+    median_km_per_hour_chart = chart_data_mins_per_km.plot.line(
+        strokeWidth=alt.value(5),
+        color=alt.value("red"),
+        x=alt.X('month:T', scale=alt.Scale(domain=[
+        first_dt_in_zone_chart, 
+        last_dt_in_zone_chart,
+    ])), y=alt.Y('mean_mins_per_km', scale=alt.Scale(domain=[3, 13]))).properties(
+        title='Median min/km hastighet för aktivitet',
+        width=600,
+        height=400,
+        strokeWidth=alt.value(10)
+    )
+    '''
+
+    mo.stop(activity_for_zones.value is None, mo.md('Välj aktivitet för zoner'))
+
+    first_dt_in_zone_chart = monthly_median_zones.drop_nulls()['month'].first().date()
+    last_dt_in_zone_chart = monthly_median_zones.drop_nulls()['month'].last().date()
+
+    median_km_per_hour_chart = alt.Chart(chart_data_mins_per_km.filter(pl.col('month') >= first_dt_in_zone_chart)).mark_line(
+        strokeWidth=5,
+        color='red',
+        ).encode(
+        x=alt.X('month:T', scale=alt.Scale(domain=[first_dt_in_zone_chart, last_dt_in_zone_chart,])),
+        y=alt.Y('mean_mins_per_km', scale=alt.Scale(domain=[5, 13]))   
+    ).properties(
+        title='Median min/km hastighet för aktivitet (högre = snabbare)',
+        width=600,
+        height=200,
+        strokeWidth=10  
+    )
+    monthly_median_zones_chart & median_km_per_hour_chart
+    return (median_km_per_hour_chart,)
 
 
 @app.cell
