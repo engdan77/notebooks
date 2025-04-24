@@ -385,12 +385,6 @@ def _(activity_for_zones, current_garmin_data, pl):
 
 
 @app.cell
-def _(median_km_per_hour_chart, monthly_median_zones_chart):
-    monthly_median_zones_chart & median_km_per_hour_chart
-    return
-
-
-@app.cell
 def chart_zones_and_speed(
     activity_for_zones,
     alt,
@@ -421,20 +415,23 @@ def chart_zones_and_speed(
     first_dt_in_zone_chart = monthly_median_zones.drop_nulls()['month'].first().date()
     last_dt_in_zone_chart = monthly_median_zones.drop_nulls()['month'].last().date()
 
+    min_tempo = int(chart_data_mins_per_km.select('mean_mins_per_km').min()['mean_mins_per_km'].first())
+    max_tempo = int(chart_data_mins_per_km.select('mean_mins_per_km').max()['mean_mins_per_km'].first())
+
     median_km_per_hour_chart = alt.Chart(chart_data_mins_per_km.filter(pl.col('month') >= first_dt_in_zone_chart)).mark_line(
         strokeWidth=5,
         color='red',
         ).encode(
         x=alt.X('month:T', scale=alt.Scale(domain=[first_dt_in_zone_chart, last_dt_in_zone_chart,])),
-        y=alt.Y('mean_mins_per_km', scale=alt.Scale(domain=[5, 13]))   
+        y=alt.Y('mean_mins_per_km', scale=alt.Scale(domain=[min_tempo, max_tempo]))   
     ).properties(
-        title='Median min/km hastighet för aktivitet (högre = snabbare)',
+        title='Median min/km hastighet för aktivitet (tempo)',
         width=600,
         height=200,
         strokeWidth=10  
     )
     monthly_median_zones_chart & median_km_per_hour_chart
-    return (median_km_per_hour_chart,)
+    return
 
 
 @app.cell
