@@ -90,7 +90,7 @@ def get_date_range_from_form(datetime, form, mo):
     start_date, end_date = form.value['date_range']
     date_range = [start_date + datetime.timedelta(days=i) for i in range((end_date - start_date).days + 1)]
     date_range_iso = [date.isoformat() for date in date_range]
-    return (date_range_iso,)
+    return date_range_iso, end_date, start_date
 
 
 @app.cell(hide_code=True)
@@ -327,10 +327,12 @@ def get_median_pulse_zones_chart(
     activity_for_zones,
     alt,
     current_garmin_data,
+    end_date,
     mo,
     pl,
+    start_date,
 ):
-    mo.stop(activity_for_zones is None, 'Välj aktivitet för zoner')
+    mo.stop(activity_for_zones.value is None, mo.md('Välj aktivitet för zoner'))
 
     monthly_median_zones = (current_garmin_data.filter(pl.col('activityType.typeKey') == activity_for_zones.value)
         .with_columns([
@@ -343,56 +345,54 @@ def get_median_pulse_zones_chart(
         ])
         .group_by("month")
         .agg([
-            pl.col("secsInZone1").median().alias("median_zone5"),
-            pl.col("secsInZone2").median().alias("median_zone4"),
+            pl.col("secsInZone1").median().alias("median_zone1"),
+            pl.col("secsInZone2").median().alias("median_zone2"),
             pl.col("secsInZone3").median().alias("median_zone3"),
-            pl.col("secsInZone4").median().alias("median_zone2"),
-            pl.col("secsInZone5").median().alias("median_zone1"),
+            pl.col("secsInZone4").median().alias("median_zone4"),
+            pl.col("secsInZone5").median().alias("median_zone5"),
         ])
     )
 
-    # Create stacked bar plot
+    colors_ = {'median_zone1': 'gray', 'median_zone2': 'lightblue', 'median_zone3': 'green', 'median_zone4': 'orange', 'median_zone5': 'red'}
+
+
     monthly_median_zones_chart = alt.Chart(monthly_median_zones).transform_fold(
-        ["median_zone5", "median_zone4", "median_zone3", "median_zone2", "median_zone1"],
+        ["median_zone1", "median_zone2", "median_zone3", "median_zone4", "median_zone5"],
         as_=['zone', 'median_time']
     ).mark_bar().encode(
-        x=alt.X('yearmonth(month):T', title='Månad'),
+        x=alt.X('yearmonth(month):T', title='Månad', scale=alt.Scale(domain=[start_date, end_date])),
         y=alt.Y('median_time:Q', title='Median tid i minuter'),
         color=alt.Color('zone:N', scale=alt.Scale(
-            domain=['median_zone5', 'median_zone4', 'median_zone3', 'median_zone2', 'median_zone1'], 
-            range=['gray', 'lightblue', 'green', 'orange', 'red']), title='Heart Rate Zones'),
-        tooltip=['month:T', 'zone:N', 'median_time:Q']
+            domain=list(colors_.keys()), range=list(colors_.values())), 
+            title='Heart Rate Zones'),
+        tooltip=['month:T', 'zone:N', 'median_time:Q'],
+        order=alt.Order('zone:N', sort='ascending')
     ).properties(
         title='Median tid i puls zoner per månad',
         width=600,
-        height=400
+        height=400,
     )
+    return (monthly_median_zones_chart,)
 
-    return monthly_median_zones, monthly_median_zones_chart
 
-
-@app.cell
+@app.cell(hide_code=True)
 def _(activity_for_zones, current_garmin_data, pl):
-
-
     _df_speed = current_garmin_data.filter(pl.col('activityType.typeKey') == activity_for_zones.value).select('dt', ((pl.col('duration')/60)/(pl.col('distance')/1000)).alias('mins_per_km'))
 
     chart_data_mins_per_km = _df_speed.with_columns(pl.col('dt').dt.truncate('1mo').alias('month')).group_by('month').agg(pl.col('mins_per_km').mean().alias('mean_mins_per_km'))
-
-    chart_data_mins_per_km
-    # _chart_data.plot.line(x='month:T', y='mins_per_km:Q')
     return (chart_data_mins_per_km,)
 
 
 @app.cell
-def chart_zones_and_speed(
+def get_chart_zones_and_temp(
     activity_for_zones,
     alt,
     chart_data_mins_per_km,
+    end_date,
     mo,
-    monthly_median_zones,
     monthly_median_zones_chart,
     pl,
+    start_date,
 ):
     '''
     This example will enforce pan/zoom that is not desired - so lean towards using Altair object
@@ -412,17 +412,14 @@ def chart_zones_and_speed(
 
     mo.stop(activity_for_zones.value is None, mo.md('Välj aktivitet för zoner'))
 
-    first_dt_in_zone_chart = monthly_median_zones.drop_nulls()['month'].first().date()
-    last_dt_in_zone_chart = monthly_median_zones.drop_nulls()['month'].last().date()
-
     min_tempo = int(chart_data_mins_per_km.select('mean_mins_per_km').min()['mean_mins_per_km'].first())
     max_tempo = int(chart_data_mins_per_km.select('mean_mins_per_km').max()['mean_mins_per_km'].first())
 
-    median_km_per_hour_chart = alt.Chart(chart_data_mins_per_km.filter(pl.col('month') >= first_dt_in_zone_chart)).mark_line(
+    median_km_per_hour_chart = alt.Chart(chart_data_mins_per_km.filter(pl.col('month') >= start_date)).mark_line(
         strokeWidth=5,
         color='red',
         ).encode(
-        x=alt.X('month:T', scale=alt.Scale(domain=[first_dt_in_zone_chart, last_dt_in_zone_chart,])),
+        x=alt.X('month:T', scale=alt.Scale(domain=[start_date, end_date])),
         y=alt.Y('mean_mins_per_km', scale=alt.Scale(domain=[min_tempo, max_tempo]))   
     ).properties(
         title='Median min/km hastighet för aktivitet (tempo)',
@@ -431,6 +428,16 @@ def chart_zones_and_speed(
         strokeWidth=10  
     )
     monthly_median_zones_chart & median_km_per_hour_chart
+    return
+
+
+@app.cell
+def _():
+    return
+
+
+@app.cell
+def _():
     return
 
 
