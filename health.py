@@ -344,16 +344,16 @@ def get_median_pulse_zones_chart(
     activity_input = graph_form['activity_input'].value
     interval_input = graph_form['interval_input'].value
 
-    monthly_median_zones = (current_garmin_data.filter(pl.col('activityType.typeKey').eq(activity_input))
+    interval_median_zones = (current_garmin_data.filter(pl.col('activityType.typeKey').eq(activity_input))
         .with_columns([
-            pl.col("dt").dt.truncate(interval_input).alias("month"),
+            pl.col("dt").dt.truncate(interval_input).alias("dt_interval"),
             (pl.col("secsInZone5") / 60),
             (pl.col("secsInZone4") / 60),
             (pl.col("secsInZone3") / 60),
             (pl.col("secsInZone2") / 60),
             (pl.col("secsInZone1") / 60),
         ])
-        .group_by("month")
+        .group_by("dt_interval")
         .agg([
             pl.col("secsInZone1").median().alias("median_zone1"),
             pl.col("secsInZone2").median().alias("median_zone2"),
@@ -366,23 +366,23 @@ def get_median_pulse_zones_chart(
     colors_ = {'median_zone1': 'gray', 'median_zone2': 'lightblue', 'median_zone3': 'green', 'median_zone4': 'orange', 'median_zone5': 'red'}
 
 
-    monthly_median_zones_chart = alt.Chart(monthly_median_zones).transform_fold(
+    interval_median_zones_chart = alt.Chart(interval_median_zones).transform_fold(
         ["median_zone1", "median_zone2", "median_zone3", "median_zone4", "median_zone5"],
         as_=['zone', 'median_time']
     ).mark_bar().encode(
-        x=alt.X('yearmonth(month):T', title='Månad', scale=alt.Scale(domain=[start_date, end_date])),
+        x=alt.X('yearmonth(dt_interval):T', title='Månad', scale=alt.Scale(domain=[start_date, end_date])),
         y=alt.Y('median_time:Q', title='Median tid i minuter'),
         color=alt.Color('zone:N', scale=alt.Scale(
             domain=list(colors_.keys()), range=list(colors_.values())), 
             title='Heart Rate Zones'),
-        tooltip=['month:T', 'zone:N', 'median_time:Q'],
+        tooltip=['dt_interval:T', 'zone:N', 'median_time:Q'],
         order=alt.Order('zone:N', sort='ascending')
     ).properties(
         title='Median tid i puls zoner',
         width=600,
         height=400,
     )
-    return activity_input, interval_input, monthly_median_zones_chart
+    return activity_input, interval_input, interval_median_zones_chart
 
 
 @app.cell(hide_code=True)
@@ -403,14 +403,14 @@ def get_df_for_median_tempo(
     return (chart_data_mins_per_km,)
 
 
-@app.cell
+@app.cell(hide_code=True)
 def get_chart_zones_and_temp(
     alt,
     chart_data_mins_per_km,
     end_date,
     graph_form,
+    interval_median_zones_chart,
     mo,
-    monthly_median_zones_chart,
     pl,
     start_date,
 ):
@@ -448,19 +448,7 @@ def get_chart_zones_and_temp(
         height=200,
         strokeWidth=10  
     )
-    monthly_median_zones_chart & median_km_per_hour_chart
-    return
-
-
-@app.cell
-def _(chart_data_mins_per_km):
-    chart_data_mins_per_km
-    return
-
-
-@app.cell
-def _(chart_data_mins_per_km):
-    int(chart_data_mins_per_km.select('mean_mins_per_km').max()['mean_mins_per_km'].first())
+    interval_median_zones_chart & median_km_per_hour_chart
     return
 
 
