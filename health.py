@@ -181,7 +181,6 @@ def get_garmin_df_and_filter(
     dob,
     form,
     get_raw_garmin_data,
-    logger,
     mo,
     pl,
 ):
@@ -202,12 +201,12 @@ def get_garmin_df_and_filter(
         zone_rates = []
         global displayed_years
         if for_year not in displayed_years:
-            logger.debug(f'For year {for_year} at age {age}')
+            mo.output.append(mo.md(f'<u>Puls zoner för ålder {age}</u>'))
         for zone, (start, end) in enumerate(zone_percs):
             start_ = round(start * max_rate)
             end_ = round(end * max_rate)
             if for_year not in displayed_years:
-                logger.debug(f'Zone {zone}: {start_}-{end_}')
+                mo.output.append(mo.md(f'**Puls Zon {zone}:** {start_}-{end_}'))
             zone_rates.append((start_, end_))
         displayed_years.add(for_year)
         return zone_rates
@@ -303,40 +302,51 @@ def save_garmin_data(Path, garmin_activities, pl):
 
 @app.cell
 def explore_garmin_dataset(current_garmin_data, mo):
-    mo.ui.dataframe(current_garmin_data, page_size=30)
+    mo.ui.dataframe(current_garmin_data, page_size=10)
     return
 
 
 @app.cell(hide_code=True)
 def get_activities_as_chart(current_garmin_data, pl):
     activities_dist = current_garmin_data.rename({"activityType.typeKey": 'activity'}).group_by(pl.col('activity')).agg(pl.len().alias('count'))
-    activities_dist.plot.bar(x='activity', y='count').properties(height=100)
+    activities_dist.plot.bar(y='activity:N', x='count:Q').properties(height=100, title='Antal aktiviteter av typ')
     return (activities_dist,)
 
 
 @app.cell(hide_code=True)
 def select_activity_for_pulse_zones_chart(activities_dist, mo):
+    interval_categories_ = {'vecka': '1w', 'månad': '1mo', 'år': '1y'}
+
     activity_types_ = activities_dist.select('activity').to_series().to_list()
     activity_for_zones = mo.ui.dropdown(activity_types_, label='Aktivitet för se pulszoner')
-    activity_for_zones
-    return (activity_for_zones,)
+
+    form_text = mo.md('Se aktiviteter av typ ... {activity_input} ... grupp per {interval_input} ...')
+
+    graph_form = form_text.batch(activity_input=mo.ui.dropdown(activity_types_), interval_input=mo.ui.dropdown(interval_categories_))
+
+    graph_form
+    # activity_for_zones
+    return (graph_form,)
 
 
 @app.cell(hide_code=True)
 def get_median_pulse_zones_chart(
-    activity_for_zones,
     alt,
     current_garmin_data,
     end_date,
+    graph_form,
     mo,
     pl,
     start_date,
 ):
-    mo.stop(activity_for_zones.value is None, mo.md('Välj aktivitet för zoner'))
+    mo.stop(any(_ is None for _ in graph_form.value.values()) is True, mo.md('Välj aktivitet för zoner'))
 
-    monthly_median_zones = (current_garmin_data.filter(pl.col('activityType.typeKey') == activity_for_zones.value)
+    activity_input = graph_form['activity_input'].value
+    interval_input = graph_form['interval_input'].value
+
+    monthly_median_zones = (current_garmin_data.filter(pl.col('activityType.typeKey').eq(activity_input))
         .with_columns([
-            pl.col("dt").dt.truncate("1mo").alias("month"),
+            pl.col("dt").dt.truncate(interval_input).alias("month"),
             (pl.col("secsInZone5") / 60),
             (pl.col("secsInZone4") / 60),
             (pl.col("secsInZone3") / 60),
@@ -368,27 +378,37 @@ def get_median_pulse_zones_chart(
         tooltip=['month:T', 'zone:N', 'median_time:Q'],
         order=alt.Order('zone:N', sort='ascending')
     ).properties(
-        title='Median tid i puls zoner per månad',
+        title='Median tid i puls zoner',
         width=600,
         height=400,
     )
-    return (monthly_median_zones_chart,)
+    return activity_input, interval_input, monthly_median_zones_chart
 
 
 @app.cell(hide_code=True)
-def _(activity_for_zones, current_garmin_data, pl):
-    _df_speed = current_garmin_data.filter(pl.col('activityType.typeKey') == activity_for_zones.value).select('dt', ((pl.col('duration')/60)/(pl.col('distance')/1000)).alias('mins_per_km'))
+def get_df_for_median_tempo(
+    activity_input,
+    current_garmin_data,
+    graph_form,
+    interval_input,
+    mo,
+    pl,
+):
+    mo.stop(any(_ is None for _ in graph_form.value.values()) is True, mo.md('Välj aktivitet för zoner'))
+    # mo.stop(activity_for_zones.value is None, mo.md('Välj aktivitet för zoner'))
 
-    chart_data_mins_per_km = _df_speed.with_columns(pl.col('dt').dt.truncate('1mo').alias('month')).group_by('month').agg(pl.col('mins_per_km').mean().alias('mean_mins_per_km'))
+    _df_speed = current_garmin_data.filter(pl.col('activityType.typeKey').eq(activity_input)).select('dt', ((pl.col('duration')/60)/(pl.col('distance')/1000)).alias('mins_per_km'))
+
+    chart_data_mins_per_km = _df_speed.with_columns(pl.col('dt').dt.truncate(interval_input).alias('month')).group_by('month').agg(pl.col('mins_per_km').median().alias('mean_mins_per_km'))
     return (chart_data_mins_per_km,)
 
 
 @app.cell
 def get_chart_zones_and_temp(
-    activity_for_zones,
     alt,
     chart_data_mins_per_km,
     end_date,
+    graph_form,
     mo,
     monthly_median_zones_chart,
     pl,
@@ -410,10 +430,11 @@ def get_chart_zones_and_temp(
     )
     '''
 
-    mo.stop(activity_for_zones.value is None, mo.md('Välj aktivitet för zoner'))
+    # mo.stop(activity_for_zones.value is None, mo.md('Välj aktivitet för zoner'))
+    mo.stop(any(_ is None for _ in graph_form.value.values()) is True, mo.md('Välj aktivitet för zoner'))
 
-    min_tempo = int(chart_data_mins_per_km.select('mean_mins_per_km').min()['mean_mins_per_km'].first())
-    max_tempo = int(chart_data_mins_per_km.select('mean_mins_per_km').max()['mean_mins_per_km'].first())
+    min_tempo = chart_data_mins_per_km.select('mean_mins_per_km').min()['mean_mins_per_km'].first() - 0.5
+    max_tempo = chart_data_mins_per_km.select('mean_mins_per_km').max()['mean_mins_per_km'].first() + 0.5
 
     median_km_per_hour_chart = alt.Chart(chart_data_mins_per_km.filter(pl.col('month') >= start_date)).mark_line(
         strokeWidth=5,
@@ -432,12 +453,14 @@ def get_chart_zones_and_temp(
 
 
 @app.cell
-def _():
+def _(chart_data_mins_per_km):
+    chart_data_mins_per_km
     return
 
 
 @app.cell
-def _():
+def _(chart_data_mins_per_km):
+    int(chart_data_mins_per_km.select('mean_mins_per_km').max()['mean_mins_per_km'].first())
     return
 
 
