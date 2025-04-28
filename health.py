@@ -363,7 +363,7 @@ def get_median_pulse_zones_chart(
         ])
     )
 
-    colors_ = {'median_zone1': 'gray', 'median_zone2': 'lightblue', 'median_zone3': 'green', 'median_zone4': 'orange', 'median_zone5': 'red'}
+    _colors = {'median_zone1': 'gray', 'median_zone2': 'lightblue', 'median_zone3': 'green', 'median_zone4': 'orange', 'median_zone5': 'red'}
 
 
     interval_median_zones_chart = alt.Chart(interval_median_zones).transform_fold(
@@ -373,7 +373,7 @@ def get_median_pulse_zones_chart(
         x=alt.X('yearmonth(dt_interval):T', title='Månad', scale=alt.Scale(domain=[start_date, end_date])),
         y=alt.Y('median_time:Q', title='Median tid i minuter'),
         color=alt.Color('zone:N', scale=alt.Scale(
-            domain=list(colors_.keys()), range=list(colors_.values())), 
+            domain=list(_colors.keys()), range=list(_colors.values())), 
             title='Heart Rate Zones'),
         tooltip=['dt_interval:T', 'zone:N', 'median_time:Q'],
         order=alt.Order('zone:N', sort='ascending')
@@ -399,7 +399,9 @@ def get_df_for_median_tempo(
 
     _df_speed = current_garmin_data.filter(pl.col('activityType.typeKey').eq(activity_input)).select('dt', ((pl.col('duration')/60)/(pl.col('distance')/1000)).alias('mins_per_km'))
 
-    chart_data_mins_per_km = _df_speed.with_columns(pl.col('dt').dt.truncate(interval_input).alias('month')).group_by('month').agg(pl.col('mins_per_km').median().alias('mean_mins_per_km'))
+    chart_data_mins_per_km = _df_speed.with_columns(pl.col('dt').dt.truncate(interval_input).alias('dt_interval')).group_by('dt_interval').agg(pl.col('mins_per_km').median().alias('mean_mins_per_km'))
+
+    chart_data_mins_per_km
     return (chart_data_mins_per_km,)
 
 
@@ -436,11 +438,11 @@ def get_chart_zones_and_temp(
     min_tempo = chart_data_mins_per_km.select('mean_mins_per_km').min()['mean_mins_per_km'].first() - 0.5
     max_tempo = chart_data_mins_per_km.select('mean_mins_per_km').max()['mean_mins_per_km'].first() + 0.5
 
-    median_km_per_hour_chart = alt.Chart(chart_data_mins_per_km.filter(pl.col('month') >= start_date)).mark_line(
+    median_km_per_hour_chart = alt.Chart(chart_data_mins_per_km.filter(pl.col('dt_interval') >= start_date)).mark_line(
         strokeWidth=5,
         color='red',
         ).encode(
-        x=alt.X('month:T', scale=alt.Scale(domain=[start_date, end_date])),
+        x=alt.X('dt_interval:T', scale=alt.Scale(domain=[start_date, end_date])),
         y=alt.Y('mean_mins_per_km', scale=alt.Scale(domain=[min_tempo, max_tempo]))   
     ).properties(
         title='Median min/km hastighet för aktivitet (tempo)',
@@ -449,6 +451,80 @@ def get_chart_zones_and_temp(
         strokeWidth=10  
     )
     interval_median_zones_chart & median_km_per_hour_chart
+    return
+
+
+@app.cell
+def _(current_garmin_data):
+    current_garmin_data
+    return
+
+
+@app.cell
+def chart_count_of_distances(activity_input, alt, current_garmin_data, pl):
+    df_distance_in_km = current_garmin_data.filter(pl.col('activityType.typeKey').eq(activity_input)).select('dt', (pl.col('distance')/1000).alias('distance_km'))
+
+    df_distance_in_km_rounded = df_distance_in_km.with_columns(pl.col('distance_km').round())
+    df_grouped_ = df_distance_in_km_rounded.group_by(pl.col('distance_km')).agg(pl.len().alias('count')).sort(by='distance_km')
+
+    alt.Chart(df_grouped_).mark_bar(size=20).encode(x=alt.X('distance_km:N', title='Kilometer averkade för aktivitet över period'), y=alt.Y('count:Q', title='Antal')).properties(height=200)
+
+    # chart_data_distance = _df_speed.with_columns(pl.col('dt').dt.truncate(interval_input).alias('dt_interval')).group_by('dt_interval').agg(pl.col('mins_per_km').median().alias('mean_mins_per_km'))
+    return
+
+
+@app.cell
+def _(current_garmin_data):
+    current_garmin_data
+    return
+
+
+@app.cell
+def _(alt, current_garmin_data, pl):
+    _colors = {'<3km': 'green', 
+               '3-5km': 'yellow', 
+               '6-10km': 'orange', 
+               '>10km': 'red'}
+
+    _activity_counts = (
+        current_garmin_data
+        .with_columns(
+            (pl.col("distance") / 1000).alias("distance_km"),  # Convert distance to kilometers
+            pl.col("dt").dt.truncate('1mo').alias("month")  # Extract month from datetime
+        )
+        .with_columns(
+            pl.when(pl.col("distance_km") < 2.8).then(pl.lit("<3km"))
+            .when((pl.col("distance_km") >= 2.8) & (pl.col("distance_km") < 5.8)).then(pl.lit("3-5km"))
+            .when((pl.col("distance_km") >= 5.8) & (pl.col("distance_km") < 10)).then(pl.lit("6-10km"))
+            .otherwise(pl.lit(">10km")).alias("distance_range")
+        )
+        .group_by(["month", "distance_range"])
+        .agg(pl.count("activityId").alias("activity_count"))
+    )
+
+    # Create a stacked bar chart
+    chart_activity_distances = (
+        alt.Chart(_activity_counts)
+        .mark_bar()
+        .encode(
+            x=alt.X("month:T", title="Month"),
+            y=alt.Y("activity_count:Q", title="Antal aktiviteter"),
+            # color=alt.Color("distance_range:N", title="Distance Range"),
+            color=alt.Color('distance_range:N', scale=alt.Scale(domain=list(_colors.keys()), range=list(_colors.values()))),
+            tooltip=["month:O", "distance_range:N", "activity_count:Q"]
+        )
+        .properties(
+            title="Antal aktiviteter med distanser",
+            width=600,
+            height=400
+        )
+        .configure_scale(
+            bandPaddingInner=0.1
+        )
+    )
+
+    chart_activity_distances
+
     return
 
 
