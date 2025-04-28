@@ -400,8 +400,6 @@ def get_df_for_median_tempo(
     _df_speed = current_garmin_data.filter(pl.col('activityType.typeKey').eq(activity_input)).select('dt', ((pl.col('duration')/60)/(pl.col('distance')/1000)).alias('mins_per_km'))
 
     chart_data_mins_per_km = _df_speed.with_columns(pl.col('dt').dt.truncate(interval_input).alias('dt_interval')).group_by('dt_interval').agg(pl.col('mins_per_km').median().alias('mean_mins_per_km'))
-
-    chart_data_mins_per_km
     return (chart_data_mins_per_km,)
 
 
@@ -456,6 +454,7 @@ def get_chart_zones_and_temp(
 
 @app.cell(hide_code=True)
 def get_count_distances_chart(
+    activity_input,
     alt,
     current_garmin_data,
     interval_categories,
@@ -470,7 +469,7 @@ def get_count_distances_chart(
                '>10km': 'red'}
 
     _activity_counts = (
-        current_garmin_data
+        current_garmin_data.filter(pl.col('activityType.typeKey').eq(activity_input))
         .with_columns(
             (pl.col("distance") / 1000).alias("distance_km"),  # Convert distance to kilometers
             pl.col("dt").dt.truncate(interval_input).alias("dt_interval")  # Extract month from datetime
@@ -514,16 +513,15 @@ def _(current_garmin_data):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def chart_count_of_distances(activity_input, alt, current_garmin_data, pl):
     df_distance_in_km = current_garmin_data.filter(pl.col('activityType.typeKey').eq(activity_input)).select('dt', (pl.col('distance')/1000).alias('distance_km'))
 
     df_distance_in_km_rounded = df_distance_in_km.with_columns(pl.col('distance_km').round())
     df_grouped_ = df_distance_in_km_rounded.group_by(pl.col('distance_km')).agg(pl.len().alias('count')).sort(by='distance_km')
 
-    alt.Chart(df_grouped_).mark_bar(size=20).encode(x=alt.X('distance_km:N', title='Kilometer averkade för aktivitet över period'), y=alt.Y('count:Q', title='Antal')).properties(height=200)
+    alt.Chart(df_grouped_).mark_bar(size=20).encode(x=alt.X('distance_km:N', title='Kilometer'), y=alt.Y('count:Q', title='Antal')).properties(height=200, title='Kilometer averkade för aktivitet över period')
 
-    # chart_data_distance = _df_speed.with_columns(pl.col('dt').dt.truncate(interval_input).alias('dt_interval')).group_by('dt_interval').agg(pl.col('mins_per_km').median().alias('mean_mins_per_km'))
     return
 
 
