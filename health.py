@@ -315,7 +315,7 @@ def get_activities_as_chart(current_garmin_data, pl):
 
 @app.cell(hide_code=True)
 def select_activity_for_pulse_zones_chart(activities_dist, mo):
-    interval_categories = {'vecka': '1w', 'månad': '1mo', 'år': '1y'}
+    interval_categories = {'dag': '1d', 'vecka': '1w', 'månad': '1mo', 'år': '1y'}
 
     activity_types_ = activities_dist.select('activity').to_series().to_list()
     activity_for_zones = mo.ui.dropdown(activity_types_, label='Aktivitet för se pulszoner')
@@ -335,6 +335,7 @@ def get_median_pulse_zones_chart(
     current_garmin_data,
     end_date,
     graph_form,
+    interval_categories,
     mo,
     pl,
     start_date,
@@ -343,6 +344,8 @@ def get_median_pulse_zones_chart(
 
     activity_input = graph_form['activity_input'].value
     interval_input = graph_form['interval_input'].value
+
+    month_text = [k for k, v in interval_categories.items() if v == interval_input].pop()
 
     interval_median_zones = (current_garmin_data.filter(pl.col('activityType.typeKey').eq(activity_input))
         .with_columns([
@@ -378,11 +381,16 @@ def get_median_pulse_zones_chart(
         tooltip=['dt_interval:T', 'zone:N', 'median_time:Q'],
         order=alt.Order('zone:N', sort='ascending')
     ).properties(
-        title='Median tid i puls zoner',
+        title=f'Median tid per aktivitet & tider i puls zoner för {month_text}',
         width=600,
         height=300,
     )
-    return activity_input, interval_input, interval_median_zones_chart
+    return (
+        activity_input,
+        interval_input,
+        interval_median_zones_chart,
+        month_text,
+    )
 
 
 @app.cell(hide_code=True)
@@ -397,10 +405,10 @@ def get_df_for_median_tempo(
     mo.stop(any(_ is None for _ in graph_form.value.values()) is True, mo.md('Välj aktivitet för zoner'))
     # mo.stop(activity_for_zones.value is None, mo.md('Välj aktivitet för zoner'))
 
-    _df_speed = current_garmin_data.filter(pl.col('activityType.typeKey').eq(activity_input)).select('dt', ((pl.col('duration')/60)/(pl.col('distance')/1000)).alias('mins_per_km'))
+    df_activity_tempo = current_garmin_data.filter(pl.col('activityType.typeKey').eq(activity_input)).select('dt', 'distance', ((pl.col('duration')/60)/(pl.col('distance')/1000)).alias('mins_per_km'))
 
-    chart_data_mins_per_km = _df_speed.with_columns(pl.col('dt').dt.truncate(interval_input).alias('dt_interval')).group_by('dt_interval').agg(pl.col('mins_per_km').median().alias('mean_mins_per_km'))
-    return (chart_data_mins_per_km,)
+    chart_data_mins_per_km = df_activity_tempo.with_columns(pl.col('dt').dt.truncate(interval_input).alias('dt_interval')).group_by('dt_interval').agg(pl.col('mins_per_km').median().alias('mean_mins_per_km'))
+    return chart_data_mins_per_km, df_activity_tempo
 
 
 @app.cell(hide_code=True)
@@ -457,12 +465,10 @@ def get_count_distances_chart(
     activity_input,
     alt,
     current_garmin_data,
-    interval_categories,
     interval_input,
+    month_text,
     pl,
 ):
-    month_text = [k for k, v in interval_categories.items() if v == interval_input].pop()
-
     _colors = {'<3km': 'green', 
                '3-5km': 'yellow', 
                '6-10km': 'orange', 
@@ -502,14 +508,8 @@ def get_count_distances_chart(
         )
     )
 
-    chart_activity_distances
+    chart_activity_distances.interactive()
 
-    return
-
-
-@app.cell
-def _(current_garmin_data):
-    current_garmin_data
     return
 
 
@@ -521,6 +521,31 @@ def chart_count_of_distances(activity_input, alt, current_garmin_data, pl):
     df_grouped_ = df_distance_in_km_rounded.group_by(pl.col('distance_km')).agg(pl.len().alias('count')).sort(by='distance_km')
 
     alt.Chart(df_grouped_).mark_bar(size=20).encode(x=alt.X('distance_km:N', title='Kilometer'), y=alt.Y('count:Q', title='Antal')).properties(height=200, title='Kilometer averkade för aktivitet över period')
+
+    return
+
+
+@app.cell
+def _(df_activity_tempo):
+    df_activity_tempo
+    return
+
+
+@app.cell
+def _(df_activity_tempo, mo, pl):
+    def float_to_minutes_seconds(minutes_float):
+        # Extract minutes
+        minutes = int(minutes_float)
+        # Extract seconds
+        seconds = int((minutes_float - minutes) * 60)
+        # Format as minutes:seconds
+        return f"{minutes}:{seconds:02}"
+    
+    _df_with_times = df_activity_tempo.filter(pl.col('distance').is_between(5800, 6200)).with_columns(time=pl.col('mins_per_km').map_elements(float_to_minutes_seconds, return_dtype=pl.String)).sort(by='mins_per_km', descending=False).select('dt', 'mins_per_km').rename({'dt': 'Datum', 'mins_per_km': 'Tempo (min/km)'})
+
+    _table = mo.ui.table(_df_with_times, page_size=5, show_column_summaries=False)
+    mo.output.append(mo.md('## Rekord hastighet för 6 km'))
+    mo.output.append(_table)
 
     return
 
