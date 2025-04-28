@@ -531,7 +531,7 @@ def _(df_activity_tempo):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(df_activity_tempo, mo, pl):
     def float_to_minutes_seconds(minutes_float):
         # Extract minutes
@@ -541,12 +541,21 @@ def _(df_activity_tempo, mo, pl):
         # Format as minutes:seconds
         return f"{minutes}:{seconds:02}"
     
-    _df_with_times = df_activity_tempo.filter(pl.col('distance').is_between(5800, 6200)).with_columns(time=pl.col('mins_per_km').map_elements(float_to_minutes_seconds, return_dtype=pl.String)).sort(by='mins_per_km', descending=False).select('dt', 'mins_per_km').rename({'dt': 'Datum', 'mins_per_km': 'Tempo (min/km)'})
+    _df_with_times = df_activity_tempo.filter(pl.col('distance').is_between(5800, 6200)).with_columns(time=pl.col('mins_per_km').map_elements(float_to_minutes_seconds, return_dtype=pl.String).alias('tempo')).sort(by='mins_per_km', descending=False).select('dt', 'time').rename({'dt': 'Datum', 'time': 'Tempo (min/km)'})
 
     _table = mo.ui.table(_df_with_times, page_size=5, show_column_summaries=False)
     mo.output.append(mo.md('## Rekord hastighet för 6 km'))
     mo.output.append(_table)
 
+    return
+
+
+@app.cell(hide_code=True)
+def _(current_garmin_data, mo, pl):
+    _longest_activities_df = current_garmin_data.select('dt', 'distance', 'activityType.typeKey', (pl.col('distance') / 1000).round().alias('km')).sort(by='distance', descending=True).rename({'activityType.typeKey': 'Aktivitet', 'dt': 'Datum'}).select('Datum', 'km', 'Aktivitet')
+
+    mo.output.append(mo.md('## Rekord distanser för period'))
+    mo.output.append(mo.ui.table(_longest_activities_df, show_column_summaries=False))
     return
 
 
