@@ -481,9 +481,11 @@ def get_count_distances_chart(
     activity_input,
     alt,
     current_garmin_data,
+    end_date,
     interval_input,
     month_text,
     pl,
+    start_date,
 ):
     _colors = {'<3km': 'green', 
                '3-5km': 'yellow', 
@@ -511,7 +513,7 @@ def get_count_distances_chart(
         alt.Chart(_activity_counts)
         .mark_bar()
         .encode(
-            x=alt.X("dt_interval:T", title="Month"),
+            x=alt.X("dt_interval:T", title="Month", scale=alt.Scale(domain=[start_date, end_date])),
             y=alt.Y("activity_count:Q", title="Antal aktiviteter"),
             # color=alt.Color("distance_range:N", title="Distance Range"),
             color=alt.Color('distance_range:N', scale=alt.Scale(domain=list(_colors.keys()), range=list(_colors.values()))),
@@ -670,17 +672,17 @@ def _(blood_pressure_data_grouped, interval_input, mo, month_text, pl):
 
 
 @app.cell(hide_code=True)
-def _(alt, blood_pressure_agg, month_text):
+def _(alt, blood_pressure_agg, end_date, month_text, start_date):
     _base = alt.Chart(blood_pressure_agg).mark_line().encode(
-        x='dt_interval:T',
+        x=alt.X('dt_interval:T', title='Datum', scale=alt.Scale(domain=[start_date, end_date])),
     ).properties(
         title=f'Medel blodtryck per {month_text}',
         width=600,
         height=300,
     )
 
-    _dia = _base.encode(y=alt.Y('bloodpressurediastolic:Q', scale=alt.Scale(domainMin=40)), color=alt.value('lightblue'))
-    _sys = _base.encode(y='bloodpressuresystolic:Q', color=alt.value('red'))
+    _dia = _base.encode(y=alt.Y('bloodpressurediastolic:Q', title='Dia', scale=alt.Scale(domainMin=40)), color=alt.value('lightblue'))
+    _sys = _base.encode(y=alt.Y('bloodpressuresystolic:Q', title='Sys'), color=alt.value('red'))
 
     _base + _dia + _sys
     return
@@ -701,11 +703,21 @@ def _(apple_df, pl):
 
 
 @app.cell
-def _(alt, pl, weight_fat_df):
+def _(alt, end_date, pl, start_date, weight_fat_df):
     # Filter out bad records
-    _base = alt.Chart(weight_fat_df.filter(pl.col('bodymass') >= 70))
-    _weight = _base.mark_line().encode(x='dt:T', y=alt.Y('bodymass:Q', scale=alt.Scale(domainMin=70)))
-    _weight
+    _df_weight = weight_fat_df.filter(pl.col('bodymass') >= 70).with_columns(pl.col('bodymass').rolling_mean(window_size=3, center=True).fill_null(strategy='mean').alias('weight'))
+
+    _base = alt.Chart(_df_weight).properties(width=600, height=300)
+
+    _weight = _base.mark_line(strokeWidth=3, color='red', interpolate="monotone").encode(x=alt.X('dt:T', title='Datum', scale=alt.Scale(domain=[start_date, end_date])), y=alt.Y('weight:Q', title='Vikt (kg)', scale=alt.Scale(domainMin=70)))
+
+    _df_fat = weight_fat_df.with_columns((pl.col('bodyfatpercentage') * 100).rolling_mean(window_size=3, center=True).fill_null(strategy='mean').alias('fat'))
+
+    _fat = alt.Chart(_df_fat).mark_line(strokeWidth=3, interpolate="monotone", color='gray').encode(x=alt.X('dt:T', scale=alt.Scale(domain=[start_date, end_date])), y=alt.Y('fat:Q', title='Fett%', scale=alt.Scale(domainMin=14)))
+
+    # _fat
+
+    alt.layer(_weight, _fat).resolve_scale(y='independent')
     return
 
 
