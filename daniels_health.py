@@ -694,9 +694,18 @@ def _(apple_df):
 
 @app.cell
 def _(apple_df, pl):
-    weight_fat_df = apple_df.filter(pl.col('metric').is_in(['bodymass', 'bodyfatpercentage'])).pivot('metric', index='dt', values='value')
+    weight_fat_df = apple_df.filter(pl.col('metric').is_in(['bodymass', 'bodyfatpercentage'])).pivot('metric', index='dt', values='value', aggregate_function='mean')
 
     weight_fat_df
+    return (weight_fat_df,)
+
+
+@app.cell
+def _(alt, pl, weight_fat_df):
+    # Filter out bad records
+    _base = alt.Chart(weight_fat_df.filter(pl.col('bodymass') >= 70))
+    _weight = _base.mark_line().encode(x='dt:T', y=alt.Y('bodymass:Q', scale=alt.Scale(domainMin=70)))
+    _weight
     return
 
 
