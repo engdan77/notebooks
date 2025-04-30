@@ -703,22 +703,34 @@ def _(apple_df, interval_input, pl):
 
 
 @app.cell
-def _(alt, end_date, pl, start_date, weight_fat_df):
-    # Filter out bad records
+def _(alt, end_date, mo, month_text, pl, start_date, weight_fat_df):
+    mo.output.append(mo.md(f'##Vikt och fett% snitt per {month_text}'))
 
     _df_weight = weight_fat_df.filter((pl.col('bodymass') >= 70), (pl.col('dt_interval').is_between(start_date, end_date))).with_columns(pl.col('bodymass').rolling_mean(window_size=3, center=True).fill_null(strategy='mean').alias('weight'))
 
+    df_min_weight = _df_weight['bodymass'].min()
+    df_max_weight = _df_weight['bodymass'].max()
+
     _base = alt.Chart(_df_weight).properties(width=600, height=300)
 
-    _weight = _base.mark_line(strokeWidth=3, color='red', interpolate="monotone").encode(x=alt.X('dt_interval:T', title='Datum', scale=alt.Scale(domain=[start_date, end_date])), y=alt.Y('weight:Q', title='Vikt (kg)', scale=alt.Scale(domainMin=70)))
+    _weight = _base.mark_line(strokeWidth=3, color='red', interpolate="monotone").encode(x=alt.X('dt_interval:T', title='Datum', scale=alt.Scale(domain=[start_date, end_date])), y=alt.Y('weight:Q', title='Vikt (kg)   🟥', scale=alt.Scale(domainMin=df_min_weight, domainMax=df_max_weight)))
 
     _df_fat = weight_fat_df.filter(pl.col('dt_interval').is_between(start_date, end_date)).with_columns((pl.col('bodyfatpercentage') * 100).rolling_mean(window_size=3, center=True).fill_null(strategy='mean').alias('fat'))
 
-    _fat = alt.Chart(_df_fat).mark_line(strokeWidth=3, interpolate="monotone", color='gray').encode(x=alt.X('dt_interval:T', scale=alt.Scale(domain=[start_date, end_date])), y=alt.Y('fat:Q', title='Fett%', scale=alt.Scale(domainMin=14)))
+    df_min_fat = _df_fat['bodyfatpercentage'].min() * 100
+    df_max_fat = _df_fat['bodyfatpercentage'].max() * 100
 
-    # _fat
+    _fat = alt.Chart(_df_fat).mark_line(strokeWidth=3, interpolate="monotone", color='gray').encode(x=alt.X('dt_interval:T', scale=alt.Scale(domain=[start_date, end_date])), y=alt.Y('fat:Q', title='Fett%   ◻️', scale=alt.Scale(domainMin=df_min_fat, domainMax=df_max_fat)))
 
-    alt.layer(_weight, _fat).resolve_scale(y='independent')
+    # 2nd axis added
+    _chart = alt.layer(_weight, _fat).resolve_scale(y='independent')
+    mo.output.append(_chart)
+    return df_min_fat, df_min_weight
+
+
+@app.cell
+def _(df_min_fat, df_min_weight):
+    df_min_weight, df_min_fat
     return
 
 
