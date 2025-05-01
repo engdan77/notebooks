@@ -380,7 +380,7 @@ def get_median_pulse_zones_chart(
             pl.col("secsInZone4").median().alias("median_zone4"),
             pl.col("secsInZone5").median().alias("median_zone5"),
         ])
-    )
+    ).filter(pl.col('dt_interval').is_between(start_date, end_date))
 
     _colors = {'median_zone1': 'gray', 'median_zone2': 'lightblue', 'median_zone3': 'green', 'median_zone4': 'orange', 'median_zone5': 'red'}
 
