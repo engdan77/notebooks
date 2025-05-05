@@ -30,29 +30,35 @@ app = marimo.App(width="full")
 
 
 @app.cell
-def imports():
+def check_if_locally():
     import marimo as mo
-    import wat
+    from pathlib import Path
+    running_locally = isinstance(mo.notebook_location(), Path)
+    return Path, mo, running_locally
+
+
+@app.cell
+def imports(running_locally):
     import polars as pl
     import altair as alt
     import json
-    import dotenv
     import os
     import datetime
-    from pathlib import Path
-    from tempfile import NamedTemporaryFile
-    from zipfile import ZipFile
-    from health import HealthData
-    from pathlib import Path
+
+    if running_locally:
+        print('Running in local model')
+        import dotenv
+        from tempfile import NamedTemporaryFile
+        from zipfile import ZipFile
+        from health import HealthData
+        import wat
     return (
         HealthData,
         NamedTemporaryFile,
-        Path,
         ZipFile,
         alt,
         datetime,
         dotenv,
-        mo,
         os,
         pl,
     )
@@ -90,14 +96,22 @@ def _(dotenv, os):
 
 @app.cell(hide_code=True)
 def form(mo):
+    interval_categories = {'dag': '1d', 'vecka': '1w', 'månad': '1mo', 'år': '1y'}
+
     form = mo.md('''
-    Date range: {date_range}
+    ## Ange detaljer för statistik
+
+    Mellan datum: {date_range}
+
+    Gruppera per {interval_input}  ... (upplösning)
+
     ''').batch(
-        date_range=mo.ui.date_range()
+        date_range=mo.ui.date_range(),
+        interval_input=mo.ui.dropdown(interval_categories)
     ).form()
 
     form
-    return (form,)
+    return form, interval_categories
 
 
 @app.cell(hide_code=True)
@@ -106,7 +120,9 @@ def get_date_range_from_form(datetime, form, mo):
     start_date, end_date = form.value['date_range']
     date_range = [start_date + datetime.timedelta(days=i) for i in range((end_date - start_date).days + 1)]
     date_range_iso = [date.isoformat() for date in date_range]
-    return date_range_iso, end_date, start_date
+
+    interval_input = form.value['interval_input']
+    return date_range_iso, end_date, interval_input, start_date
 
 
 @app.cell(hide_code=True)
@@ -307,6 +323,7 @@ def save_garmin_data(Path, garmin_activities, pl):
     current_garmin_data = garmin_activities
     _fn = 'all_health_garmin'
     if Path(_fn).exists():
+        # existing_df = pl.read_ndjson(_fn, schema_overrides={"dt": pl.Datetime})
         existing_df = pl.read_ndjson(_fn, schema_overrides={"dt": pl.Datetime})
         all_garmin_data = pl.concat([existing_df, current_garmin_data], how='align').unique().sort_by('dt')
     else:
@@ -331,22 +348,16 @@ def get_activities_as_chart(current_garmin_data, pl):
 
 @app.cell(hide_code=True)
 def select_activity_for_pulse_zones_chart(activities_dist, mo):
-    interval_categories = {'dag': '1d', 'vecka': '1w', 'månad': '1mo', 'år': '1y'}
-
-    activity_types_ = activities_dist.select('activity').to_series().to_list()
-    activity_for_zones = mo.ui.dropdown(activity_types_, label='Aktivitet för se pulszoner')
-
-    form_text = mo.md('Se aktiviteter av typ ... {activity_input} ... grupp per {interval_input} ...')
-
-    graph_form = form_text.batch(activity_input=mo.ui.dropdown(activity_types_), interval_input=mo.ui.dropdown(interval_categories))
-
-    graph_form
-    # activity_for_zones
-    return graph_form, interval_categories
+    activity_types = activities_dist.select('activity').to_series().to_list()
+    _form_text = mo.md('Se aktiviteter av typ ... {activity_input} ...')
+    activity_type_form = _form_text.batch(activity_input=mo.ui.dropdown(activity_types))
+    activity_type_form
+    return (activity_type_form,)
 
 
 @app.cell(hide_code=True)
 def get_median_pulse_zones_chart(
+    activity_type_form,
     alt,
     current_garmin_data,
     end_date,
@@ -356,7 +367,7 @@ def get_median_pulse_zones_chart(
     pl,
     start_date,
 ):
-    mo.stop(any(_ is None for _ in graph_form.value.values()) is True, mo.md('Välj aktivitet för zoner'))
+    mo.stop(any(_ is None for _ in activity_type_form.value.values()) is True, mo.md('Välj aktivitet för zoner'))
 
     activity_input = graph_form['activity_input'].value
     interval_input = graph_form['interval_input'].value
