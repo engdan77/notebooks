@@ -25,7 +25,7 @@
 
 import marimo
 
-__generated_with = "0.13.2"
+__generated_with = "0.13.4"
 app = marimo.App(width="full")
 
 
@@ -64,6 +64,12 @@ def imports(running_locally):
     )
 
 
+@app.cell
+def define_global_vars():
+    garmin_file = 'all_health_garmin.parquet'
+    return (garmin_file,)
+
+
 @app.cell(hide_code=True)
 def create_logger():
     import logging
@@ -92,6 +98,17 @@ def _(dotenv, os):
     username = os.getenv('GARMIN_USERNAME')
     password = os.getenv('GARMIN_PASSWORD')
     return password, username
+
+
+@app.cell
+def _(mo):
+    input_garmin_upload_period = mo.ui.date_range()
+    _garmin_upload_form = mo.md('''## Ladda in Garmin aktiviteter från API
+
+    {input_garmin_upload_period}
+    ''').batch(input_garmin_upload_period=input_garmin_upload_period).form()
+    _garmin_upload_form
+    return
 
 
 @app.cell(hide_code=True)
@@ -315,21 +332,20 @@ def get_garmin_df_and_filter(
     cols = garmin_activities.columns
     garmin_activities = garmin_activities.select(["dt"] + [col for col in cols if col != "dt"]).sort(by="dt").filter(pl.col('distance') > 1000)
 
-    return displayed_years, garmin_activities
+    return (garmin_activities,)
 
 
 @app.cell(hide_code=True)
-def save_garmin_data(Path, garmin_activities, pl):
+def save_garmin_data(Path, garmin_activities, garmin_file, pl):
     current_garmin_data = garmin_activities
-    _fn = 'all_health_garmin'
+    _fn = 'all_health_garmin.parquet'
     if Path(_fn).exists():
         # existing_df = pl.read_ndjson(_fn, schema_overrides={"dt": pl.Datetime})
-        existing_df = pl.read_ndjson(_fn, schema_overrides={"dt": pl.Datetime})
-        all_garmin_data = pl.concat([existing_df, current_garmin_data], how='align').unique().sort_by('dt')
+        existing_df = pl.read_parquet(garmin_file)
+        all_garmin_data = pl.concat([existing_df, current_garmin_data], how='align').unique()
     else:
         all_garmin_data = current_garmin_data
-    all_garmin_data.write_ndjson(f'{_fn}.ndjson')
-    all_garmin_data.write_parquet(f'{_fn}.parquet')
+    all_garmin_data.write_parquet(garmin_file)
     return (current_garmin_data,)
 
 
@@ -363,6 +379,7 @@ def get_median_pulse_zones_chart(
     end_date,
     graph_form,
     interval_categories,
+    interval_input,
     mo,
     pl,
     start_date,
@@ -370,7 +387,7 @@ def get_median_pulse_zones_chart(
     mo.stop(any(_ is None for _ in activity_type_form.value.values()) is True, mo.md('Välj aktivitet för zoner'))
 
     activity_input = graph_form['activity_input'].value
-    interval_input = graph_form['interval_input'].value
+    # interval_input = graph_form['interval_input'].value
 
     month_text = [k for k, v in interval_categories.items() if v == interval_input].pop()
 
@@ -412,12 +429,7 @@ def get_median_pulse_zones_chart(
         width=600,
         height=300,
     )
-    return (
-        activity_input,
-        interval_input,
-        interval_median_zones_chart,
-        month_text,
-    )
+    return activity_input, interval_median_zones_chart, month_text
 
 
 @app.cell(hide_code=True)
