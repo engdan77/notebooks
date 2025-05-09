@@ -25,7 +25,7 @@
 
 import marimo
 
-__generated_with = "0.13.4"
+__generated_with = "0.13.6"
 app = marimo.App(width="columns")
 
 
@@ -70,6 +70,46 @@ def define_global_vars():
     return (garmin_file,)
 
 
+@app.cell
+def get_garmin_credentials(dotenv, mo, os):
+    env_config = dotenv.load_dotenv('.env')
+
+    _username = os.getenv('GARMIN_USERNAME', None)
+    _password = os.getenv('GARMIN_PASSWORD', None)
+
+    garmin_login_found = None
+
+    if None in (_username, _password):
+        _u = mo.ui.text()
+        _p = mo.ui.text(kind='password')
+        garmin_login_form = mo.md("""### Fyll i Garmin uppgifter
+        Du kan även skapa en `.env` fil med följande `GARMIN_USERNAME` samt `GARMIN_PASSWORD`
+
+        Användarnamn: {username}
+    
+        Lösenord: {password}
+        """).batch(username=_u, password=_p).form()
+        mo.output.append(garmin_login_form)
+    else:
+        garmin_login_found = (_username, _password)
+
+    return garmin_login_form, garmin_login_found
+
+
+@app.cell
+def _(garmin_login_form, garmin_login_found, mo):
+    mo.stop(garmin_login_found is None or garmin_login_form.value is None, mo.md('Ange Garmin uppfifter'))
+    garmin_username = ''
+    garmin_password = ''
+    if garmin_login_found:
+        garmin_username, garmin_password = garmin_login_found
+    else:
+        garmin_username = garmin_login_form.value['username']
+        garmin_password = garmin_login_form.value['password']
+    
+    return
+
+
 @app.cell(hide_code=True)
 def create_logger():
     import logging
@@ -90,14 +130,6 @@ def create_logger():
     logger.addHandler(ch)
 
     return (logger,)
-
-
-@app.cell
-def _(dotenv, os):
-    dotenv.load_dotenv('.env')
-    username = os.getenv('GARMIN_USERNAME')
-    password = os.getenv('GARMIN_PASSWORD')
-    return password, username
 
 
 @app.cell(hide_code=True)
