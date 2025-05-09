@@ -1,14 +1,16 @@
-# marimo WebAssembly + GitHub Pages Template
+# Notebooks
 
-This template repository demonstrates how to export [marimo](https://marimo.io) notebooks to WebAssembly and deploy them to GitHub Pages.
+This is a repository as placeholder for some of my *shareable* notebook.
 
-## 📚 Included Examples
+## 📕 Current Notebooks
 
-- `apps/charts.py`: Interactive data visualization with Altair
-- `notebooks/fibonacci.py`: Interactive Fibonacci sequence calculator
-- `notebooks/penguins.py`: Interactive data analysis with Polars and marimo
+### Year 2025
 
-## 🚀 Usage
+* Health Data
+
+
+
+## 🚀 Turn Marimo Notebooks into Github Pages
 
 1. Fork this repository
 2. Add your marimo files to the `notebooks/` or `apps/` directory
