@@ -658,7 +658,6 @@ def get_garmin_raw_data(datetime, logger, mo, password, username):
                 if isinstance(dt_, datetime.date):
                     dt_ = dt_.isoformat()
                 activities = cached_get_garmin_activites(dt_)
-                breakpoint()
 
                 # Adding another API call to get heart rate zones
                 for activity in activities.get('ActivitiesForDay', {}).get('payload', []):
@@ -667,7 +666,7 @@ def get_garmin_raw_data(datetime, logger, mo, password, username):
                         activity[field] = value
 
                 all_activities.append(activities)
-                bar.update(subtitle=str(_dt))
+                bar.update(subtitle=str(dt_))
         return all_activities
 
 
@@ -846,23 +845,25 @@ def get_garmin_df_and_filter(
         all_garmin_data = pl.concat([existing_df, garmin_activities], how='align').unique()
     else:
         logger.info('Building empty Garmin {garmin_file}')
-        all_garmin_data = pl.DataFrame()
+        all_garmin_data = garmin_activities
     all_garmin_data.write_parquet(garmin_file)
     return (garmin_activities,)
 
 
 @app.cell(hide_code=True)
 def _(Path, garmin_file, mo, pl):
-    mo.stop(Path(garmin_file).exists() is False, mo.md(f'{garmin_file} ej skapad'))
+    mo.stop(Path(garmin_file).exists() is False, mo.md(f'{garmin_file} ej skapad så laddar ej den ej'))
 
     _df = pl.read_parquet(garmin_file)
-    _sorted = _df.select('dt').sort(by='dt')
-    _as_list = _sorted.select(pl.col('dt'))['dt']
-    _first, _last = _as_list.first(), _as_list.last()
+    mo.output.append(_df)
 
-    mo.md(f'''
-    Garmin data just nu lagrad för perioden {_first:%Y-%m-%d} <-> {_last:%Y-%m-%d}
-    ''')       
+    # _sorted = _df.select('dt').sort(by='dt')
+    # _as_list = _sorted.select(pl.col('dt'))['dt']
+    # _first, _last = _as_list.first(), _as_list.last()
+
+    # mo.output.append(mo.md(f'''Garmin data just nu lagrad för perioden {_first:%Y-%m-%d} <-> {_last:%Y-%m-%d}'''))
+
+
     return
 
 
