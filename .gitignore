@@ -175,3 +175,9 @@ cython_debug/
 .DS_Store
 .marimo
 test/
+
+# Marimo specific
+__marimo__/
+
+# Exclude persistent cache
+.persist_cache/
