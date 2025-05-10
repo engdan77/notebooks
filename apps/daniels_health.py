@@ -65,35 +65,10 @@ def imports(running_locally):
 
 
 @app.cell
-def define_global_vars():
-    garmin_file = 'all_health_garmin.parquet'
+def define_global_vars(mo):
+    garmin_file = mo.notebook_location() / 'public' / 'all_health_garmin.parquet'
+    mo.md(f'Garmin fil att använda `{garmin_file}`')
     return (garmin_file,)
-
-
-@app.cell
-def get_garmin_credentials(dotenv, mo, os):
-    env_config = dotenv.load_dotenv('.env')
-
-    _username = os.getenv('GARMIN_USERNAME', None)
-    _password = os.getenv('GARMIN_PASSWORD', None)
-
-    garmin_login_found = None
-
-    if None in (_username, _password):
-        _u = mo.ui.text()
-        _p = mo.ui.text(kind='password')
-        garmin_login_form = mo.md("""### Fyll i Garmin uppgifter
-        Du kan även skapa en `.env` fil med följande `GARMIN_USERNAME` samt `GARMIN_PASSWORD`
-
-        Användarnamn: {username}
-    
-        Lösenord: {password}
-        """).batch(username=_u, password=_p).form()
-        mo.output.append(garmin_login_form)
-    else:
-        garmin_login_found = (_username, _password)
-
-    return garmin_login_form, garmin_login_found
 
 
 @app.cell
@@ -107,7 +82,7 @@ def _(garmin_login_form, garmin_login_found, mo):
         garmin_username = garmin_login_form.value['username']
         garmin_password = garmin_login_form.value['password']
     
-    return
+    return garmin_password, garmin_username
 
 
 @app.cell(hide_code=True)
@@ -629,23 +604,54 @@ def _():
 
 
 @app.cell(column=1, hide_code=True)
-def _(mo):
+def start_garmin_download(mo):
     mo.output.append(mo.md('## Ladda in Garmin aktiviteter från API'))
     input_run_garmin_import = mo.ui.run_button(label='Starta')
     mo.output.append(input_run_garmin_import)
     return (input_run_garmin_import,)
 
 
+@app.cell
+def get_garmin_credentials(dotenv, mo, os):
+    env_config = dotenv.load_dotenv('.env')
+
+    _username = os.getenv('GARMIN_USERNAME', None)
+    _password = os.getenv('GARMIN_PASSWORD', None)
+
+    garmin_login_found = None
+
+    if None in (_username, _password):
+        _u = mo.ui.text()
+        _p = mo.ui.text(kind='password')
+        garmin_login_form = mo.md("""### Fyll i Garmin uppgifter
+        Du kan även skapa en `.env` fil med följande `GARMIN_USERNAME` samt `GARMIN_PASSWORD`
+
+        Användarnamn: {username}
+    
+        Lösenord: {password}
+        """).batch(username=_u, password=_p).form()
+        mo.output.append(garmin_login_form)
+    else:
+        garmin_login_found = (_username, _password)
+
+    return garmin_login_form, garmin_login_found
+
+
 @app.cell(hide_code=True)
-def get_garmin_raw_data(datetime, logger, mo, password, username):
+def get_garmin_raw_data(
+    datetime,
+    garmin_password,
+    garmin_username,
+    logger,
+    mo,
+):
     from persist_cache import cache
     from garminconnect import Garmin
 
-    RawGarminData = dict
     DateLike = str | datetime.date
 
     logger.debug('Logging in to Garmin')
-    gc = Garmin(username, password)
+    gc = Garmin(garmin_username, garmin_password)
     gc_login = gc.login()
 
     @cache
@@ -668,7 +674,7 @@ def get_garmin_raw_data(datetime, logger, mo, password, username):
         return zone_columns
 
 
-    def get_raw_garmin_data(dt: DateLike | list[DateLike], pb=None) -> RawGarminData:
+    def get_raw_garmin_data(dt: DateLike | list[DateLike], pb=None) -> dict:
         all_activities = []
 
         if isinstance(dt, str):
@@ -709,7 +715,7 @@ def get_garmin_raw_data(datetime, logger, mo, password, username):
     # get_raw_garmin_data(username=username, password=password, dt=['2025-04-12', '2025-04-14'])
     dob_ = get_garmin_profile()['userData']['birthDate']
     dob = datetime.date.fromisoformat(dob_).year
-    return RawGarminData, cache, dob, gc, get_raw_garmin_data
+    return cache, dob, gc, get_raw_garmin_data
 
 
 @app.cell(hide_code=True)
@@ -752,7 +758,6 @@ def get_first_garmin_activity(cache, datetime, gc, logger, mo):
 @app.cell(hide_code=True)
 def get_garmin_df_and_filter(
     Path,
-    RawGarminData,
     datetime,
     dob,
     garmin_file,
@@ -822,7 +827,7 @@ def get_garmin_df_and_filter(
         return pl.struct(pl.all()).map_elements(lambda row: raw_heart_rate_to_zones(row['startTimeLocal'], row['duration'], raw_heart_rates, hr_start, hr_end), return_dtype=pl.Int64).alias(f'secsInHeartRateZone{zone}')
 
 
-    def convert_garmin_activities(raw_garmin_data: RawGarminData, dob_: int) -> pl.DataFrame:
+    def convert_garmin_activities(raw_garmin_data: dict, dob_: int) -> pl.DataFrame:
         """Main purpose normalizing to JSON and adding pulse zones"""
         output_df = pl.DataFrame()
 
@@ -884,7 +889,7 @@ def get_garmin_df_and_filter(
 
 @app.cell(hide_code=True)
 def _(Path, garmin_file, mo, pl):
-    mo.stop(Path(garmin_file).exists() is False, mo.md(f'{garmin_file} ej skapad så laddar ej den ej'))
+    mo.stop(Path(garmin_file).exists() is False)
 
     _df = pl.read_parquet(garmin_file)
     mo.output.append(_df)
@@ -896,11 +901,6 @@ def _(Path, garmin_file, mo, pl):
     # mo.output.append(mo.md(f'''Garmin data just nu lagrad för perioden {_first:%Y-%m-%d} <-> {_last:%Y-%m-%d}'''))
 
 
-    return
-
-
-@app.cell
-def _():
     return
 
 
