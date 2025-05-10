@@ -68,7 +68,9 @@ def imports(running_locally):
 def define_global_vars(mo):
     garmin_file = mo.notebook_location() / 'public' / 'all_health_garmin.parquet'
     mo.md(f'Garmin fil att använda `{garmin_file}`')
-    return (garmin_file,)
+    apple_file = mo.notebook_location() / 'public' / 'apple_health.parquet'
+    mo.md(f'Apple Hälsa fil att använda `{apple_file}`')
+    return apple_file, garmin_file
 
 
 @app.cell(hide_code=True)
@@ -399,69 +401,6 @@ def get_records_distance(current_garmin_data, mo, pl):
 
 
 @app.cell(hide_code=True)
-def upload_apple_health(mo):
-    mo.output.append('Ladda in Apple Hälsa data')
-    apple_health_upload = mo.ui.file().form()
-    mo.output.append(apple_health_upload)
-    return (apple_health_upload,)
-
-
-@app.cell(hide_code=True)
-def process_apple_health_data(
-    HealthData,
-    NamedTemporaryFile,
-    Path,
-    ZipFile,
-    apple_health_upload,
-    logger,
-    mo,
-):
-    mo.stop(apple_health_upload.value is None, mo.md('Välj och ladda upp Apple Hälsa'))
-    apple_health_content = apple_health_upload.value[0].contents
-
-    def open_apple_health_zip(input_zip_data: bytes) -> list[dict]:
-        activities = [
-            "HKQuantityTypeIdentifierBloodPressureDiastolic",
-            "HKQuantityTypeIdentifierBloodPressureSystolic",
-            "HKQuantityTypeIdentifierBodyFatPercentage",
-            "HKQuantityTypeIdentifierBodyMass",
-            "HKQuantityTypeIdentifierBodyMassIndex",
-            "HKQuantityTypeIdentifierDistanceWalkingRunning",
-            "HKQuantityTypeIdentifierStepCount",
-        ]
-        activity_prefix = "HKQuantityTypeIdentifier"
-
-        with NamedTemporaryFile('rb+') as input_zip:
-            input_zip.write(input_zip_data)
-            with ZipFile(input_zip.name) as myzip:
-                logger.debug(myzip.namelist())
-                with myzip.open("apple_health_export/export.xml") as myfile:
-                    content = myfile.read()
-                    with NamedTemporaryFile('rb+') as tmp_fp:
-                        tmp_fp.write(content)
-                        fn = tmp_fp.name
-                        logger.debug(f"Temp apple health file file {fn}, size {Path(fn).stat().st_size}")
-                        health_data = HealthData.read(fn)
-
-        assert health_data is not None, 'If health data is None, something went wrong'
-        input_records = health_data
-        output = []
-        for r in input_records.records:
-            d = r.start.strftime("%Y-%m-%d")
-            if r.name in activities:
-                metric_name = r.name.replace(activity_prefix, "").lower()
-                unit = r.unit
-                value = r.value
-                output.append({'metric': metric_name, 'unit': unit, 'value': value, 'date': d})
-        return output
-
-    with mo.status.spinner('Processar Apple hälsa data'):
-        apple_data = open_apple_health_zip(apple_health_content)
-
-    return (apple_data,)
-
-
-@app.cell(hide_code=True)
 def display_apple_df(apple_data, mo, pl):
     apple_df = pl.DataFrame(apple_data).with_columns(dt=pl.col('date').str.to_date())
     mo.output.append(mo.md(f'## Apple Health data'))
@@ -630,7 +569,7 @@ def start_garmin_download(mo):
     return (input_run_garmin_import,)
 
 
-@app.cell
+@app.cell(hide_code=True)
 def get_garmin_credentials(dotenv, mo, os):
     env_config = dotenv.load_dotenv('.env')
 
@@ -653,17 +592,20 @@ def get_garmin_credentials(dotenv, mo, os):
     else:
         garmin_login_found = (_username, _password)
 
-    return
+    return (garmin_login_found,)
 
 
 @app.cell(hide_code=True)
 def get_garmin_raw_data(
     datetime,
+    garmin_login_found,
     garmin_password,
     garmin_username,
     logger,
     mo,
 ):
+    mo.stop(not garmin_login_found, mo.md('Avaktar med att hämta Garmin data'))
+
     from persist_cache import cache
     from garminconnect import Garmin
 
@@ -920,6 +862,85 @@ def _(Path, garmin_file, mo, pl):
     # mo.output.append(mo.md(f'''Garmin data just nu lagrad för perioden {_first:%Y-%m-%d} <-> {_last:%Y-%m-%d}'''))
 
 
+    return
+
+
+@app.cell(column=2, hide_code=True)
+def upload_apple_health(mo):
+    mo.output.append('Ladda in Apple Hälsa data')
+    apple_health_upload = mo.ui.file().form()
+    mo.output.append(apple_health_upload)
+    return (apple_health_upload,)
+
+
+@app.cell(hide_code=True)
+def process_apple_health_data(
+    HealthData,
+    NamedTemporaryFile,
+    Path,
+    ZipFile,
+    apple_file,
+    apple_health_upload,
+    logger,
+    mo,
+    pl,
+):
+    mo.stop(apple_health_upload.value is None, mo.md('Välj och ladda upp Apple Hälsa'))
+    apple_health_content = apple_health_upload.value[0].contents
+
+    def open_apple_health_zip(input_zip_data: bytes) -> list[dict]:
+        activities = [
+            "HKQuantityTypeIdentifierBloodPressureDiastolic",
+            "HKQuantityTypeIdentifierBloodPressureSystolic",
+            "HKQuantityTypeIdentifierBodyFatPercentage",
+            "HKQuantityTypeIdentifierBodyMass",
+            "HKQuantityTypeIdentifierBodyMassIndex",
+            "HKQuantityTypeIdentifierDistanceWalkingRunning",
+            "HKQuantityTypeIdentifierStepCount",
+        ]
+        activity_prefix = "HKQuantityTypeIdentifier"
+
+        with NamedTemporaryFile('rb+') as input_zip:
+            input_zip.write(input_zip_data)
+            with ZipFile(input_zip.name) as myzip:
+                logger.debug(myzip.namelist())
+                with myzip.open("apple_health_export/export.xml") as myfile:
+                    content = myfile.read()
+                    with NamedTemporaryFile('rb+') as tmp_fp:
+                        tmp_fp.write(content)
+                        fn = tmp_fp.name
+                        logger.debug(f"Temp apple health file file {fn}, size {Path(fn).stat().st_size}")
+                        health_data = HealthData.read(fn)
+
+        assert health_data is not None, 'If health data is None, something went wrong'
+        input_records = health_data
+        output = []
+        for r in input_records.records:
+            d = r.start.strftime("%Y-%m-%d")
+            if r.name in activities:
+                metric_name = r.name.replace(activity_prefix, "").lower()
+                unit = r.unit
+                value = r.value
+                output.append({'metric': metric_name, 'unit': unit, 'value': value, 'date': d})
+        return output
+
+    with mo.status.spinner('Processar Apple hälsa data'):
+        apple_data = open_apple_health_zip(apple_health_content)
+    
+    _df = pl.DataFrame(apple_data).with_columns(dt=pl.col('date').str.to_date())
+    if apple_file.exists():
+        _existing_df = pl.read_parquet(apple_file)
+        _all_apple_data = pl.concat([_existing_df, _df], how='align').unique()
+    else:
+        _all_apple_data = _df
+    
+    _all_apple_data.write_parquet(apple_file)
+
+    return (apple_data,)
+
+
+@app.cell
+def _():
     return
 
 
