@@ -71,20 +71,6 @@ def define_global_vars(mo):
     return (garmin_file,)
 
 
-@app.cell
-def _(garmin_login_form, garmin_login_found, mo):
-    mo.stop(garmin_login_found is None or garmin_login_form.value is None, mo.md('Ange Garmin uppfifter'))
-    garmin_username = ''
-    garmin_password = ''
-    if garmin_login_found:
-        garmin_username, garmin_password = garmin_login_found
-    else:
-        garmin_username = garmin_login_form.value['username']
-        garmin_password = garmin_login_form.value['password']
-    
-    return garmin_password, garmin_username
-
-
 @app.cell(hide_code=True)
 def create_logger():
     import logging
@@ -129,10 +115,44 @@ def form_for_display(mo):
     ''').batch(
         date_range=mo.ui.date_range(),
         interval_input=mo.ui.dropdown(interval_categories)
-    ).form()
+    )
 
     form
     return form, interval_categories
+
+
+@app.cell(hide_code=True)
+def load_or_empty_current_garmin_data(
+    end_date,
+    garmin_file,
+    mo,
+    pl,
+    start_date,
+):
+    relevant_garmin_colums = [
+        "dt",
+        "activityId",
+        "startTimeLocal",
+        "distance",
+        "duration",
+        "calories",
+        "steps",
+        "activityType.typeKey",
+        "activityName",
+        "secsInZone1",
+        "secsInZone2",
+        "secsInZone3",
+        "secsInZone4",
+        "secsInZone5",
+    ]
+
+    if garmin_file.exists():
+        current_garmin_data = pl.read_parquet(garmin_file).filter(pl.col('dt').is_between(start_date, end_date))
+    else:
+        current_garmin_data = pl.DataFrame({k: [] for k in relevant_garmin_colums})
+
+    mo.md(f'Antal Garmin datapunkter {current_garmin_data.height} mellan {start_date} <-> {end_date}')
+    return (current_garmin_data,)
 
 
 @app.cell
@@ -634,7 +654,7 @@ def get_garmin_credentials(dotenv, mo, os):
     else:
         garmin_login_found = (_username, _password)
 
-    return garmin_login_form, garmin_login_found
+    return
 
 
 @app.cell(hide_code=True)
