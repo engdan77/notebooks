@@ -29,7 +29,7 @@ __generated_with = "0.13.6"
 app = marimo.App(width="columns")
 
 
-@app.cell(column=0)
+@app.cell(column=0, hide_code=True)
 def check_if_locally():
     import marimo as mo
     from pathlib import Path
@@ -37,7 +37,7 @@ def check_if_locally():
     return Path, mo, running_locally
 
 
-@app.cell
+@app.cell(hide_code=True)
 def imports(running_locally):
     import polars as pl
     import altair as alt
@@ -64,12 +64,12 @@ def imports(running_locally):
     )
 
 
-@app.cell
+@app.cell(hide_code=True)
 def define_global_vars(mo):
     garmin_file = mo.notebook_location() / 'public' / 'all_health_garmin.parquet'
-    mo.md(f'Garmin fil att använda `{garmin_file}`')
+    mo.output.append(mo.md(f'Garmin fil att använda `{garmin_file}`'))
     apple_file = mo.notebook_location() / 'public' / 'apple_health.parquet'
-    mo.md(f'Apple Hälsa fil att använda `{apple_file}`')
+    mo.output.append(mo.md(f'Apple Hälsa fil att använda `{apple_file}`'))
     return apple_file, garmin_file
 
 
@@ -124,6 +124,15 @@ def form_for_display(mo):
 
 
 @app.cell(hide_code=True)
+def select_activity_for_pulse_zones_chart(activities_dist, mo):
+    activity_types = activities_dist.select('activity').to_series().to_list()
+    _form_text = mo.md('Se aktiviteter av typ ... {activity_input} ...')
+    activity_type_form = _form_text.batch(activity_input=mo.ui.dropdown(activity_types))
+    activity_type_form
+    return (activity_type_form,)
+
+
+@app.cell(hide_code=True)
 def load_or_empty_current_garmin_data(
     end_date,
     garmin_file,
@@ -168,15 +177,6 @@ def get_activities_as_chart(current_garmin_data, pl):
     activities_dist = current_garmin_data.rename({"activityType.typeKey": 'activity'}).group_by(pl.col('activity')).agg(pl.len().alias('count'))
     activities_dist.plot.bar(y='activity:N', x='count:Q').properties(height=100, title='Antal aktiviteter av typ')
     return (activities_dist,)
-
-
-@app.cell(hide_code=True)
-def select_activity_for_pulse_zones_chart(activities_dist, mo):
-    activity_types = activities_dist.select('activity').to_series().to_list()
-    _form_text = mo.md('Se aktiviteter av typ ... {activity_input} ...')
-    activity_type_form = _form_text.batch(activity_input=mo.ui.dropdown(activity_types))
-    activity_type_form
-    return (activity_type_form,)
 
 
 @app.cell(hide_code=True)
@@ -401,119 +401,6 @@ def get_records_distance(current_garmin_data, mo, pl):
 
 
 @app.cell(hide_code=True)
-def display_apple_df(apple_data, mo, pl):
-    apple_df = pl.DataFrame(apple_data).with_columns(dt=pl.col('date').str.to_date())
-    mo.output.append(mo.md(f'## Apple Health data'))
-    mo.output.append(apple_df)
-    return (apple_df,)
-
-
-@app.cell(hide_code=True)
-def display_apple_health_metrics():
-    # apple_df.select('metric').unique()
-    return
-
-
-@app.cell(hide_code=True)
-def group_blood_pressure_exclude_duplicates(
-    apple_df,
-    end_date,
-    pl,
-    start_date,
-):
-    blood_pressure_data_grouped = apple_df.select(['dt', 'metric', 'value']).filter(pl.col('metric').is_in(['bloodpressuresystolic', 'bloodpressurediastolic']), pl.col('dt').is_between(start_date, end_date)).group_by(['dt', 'metric']).agg(pl.mean('value')).sort(by='dt')
-    return (blood_pressure_data_grouped,)
-
-
-@app.cell(hide_code=True)
-def explore_blood_pressure_df(
-    blood_pressure_data_grouped,
-    interval_input,
-    mo,
-    month_text,
-    pl,
-):
-    mo.output.append(mo.md(f'### Utforska blodtrycket för perioden med snitt per {month_text}'))
-
-    blood_pressure_exploded = blood_pressure_data_grouped.pivot('metric', index="dt", values="value")
-
-    blood_pressure_agg = blood_pressure_exploded.with_columns(pl.col('dt').dt.truncate(every=interval_input).alias('dt_interval')).group_by('dt_interval').agg(pl.mean(['bloodpressuresystolic', 'bloodpressurediastolic'])).sort(by='dt_interval')
-
-    mo.output.append(blood_pressure_agg)
-    return (blood_pressure_agg,)
-
-
-@app.cell(hide_code=True)
-def display_blood_pressure_chart(
-    alt,
-    blood_pressure_agg,
-    end_date,
-    month_text,
-    start_date,
-):
-    _base = alt.Chart(blood_pressure_agg).mark_line().encode(
-        x=alt.X('dt_interval:T', title='Datum', scale=alt.Scale(domain=[start_date, end_date])),
-    ).properties(
-        title=f'Medel blodtryck per {month_text}',
-        width=600,
-        height=300,
-    )
-
-    _dia = _base.encode(y=alt.Y('bloodpressurediastolic:Q', title='Dia', scale=alt.Scale(domainMin=40)), color=alt.value('lightblue'))
-    _sys = _base.encode(y=alt.Y('bloodpressuresystolic:Q', title='Sys'), color=alt.value('red'))
-
-    _base + _dia + _sys
-    return
-
-
-@app.cell(hide_code=True)
-def explore_complete_apple_health_df(apple_df, mo):
-    mo.output.append(mo.md(f'## Utforska all Apple Hälsa data'))
-    mo.output.append(mo.ui.dataframe(apple_df))
-    return
-
-
-@app.cell(hide_code=True)
-def get_weight_fat_df_from_apple_df(apple_df, interval_input, pl):
-    weight_fat_df = apple_df.filter(pl.col('metric').is_in(['bodymass', 'bodyfatpercentage'])).pivot('metric', index='dt', values='value', aggregate_function='mean').with_columns(pl.col('dt').dt.truncate(every=interval_input).alias('dt_interval')).group_by('dt_interval').agg(pl.mean(['bodymass', 'bodyfatpercentage']))
-    return (weight_fat_df,)
-
-
-@app.cell(hide_code=True)
-def display_weight_fat_plot(
-    alt,
-    end_date,
-    mo,
-    month_text,
-    pl,
-    start_date,
-    weight_fat_df,
-):
-    mo.output.append(mo.md(f'##Vikt och fett% snitt per {month_text}'))
-
-    _df_weight = weight_fat_df.filter((pl.col('bodymass') >= 70), (pl.col('dt_interval').is_between(start_date, end_date))).with_columns(pl.col('bodymass').rolling_mean(window_size=3, center=True).fill_null(strategy='mean').alias('weight'))
-
-    df_min_weight = _df_weight['bodymass'].min()
-    df_max_weight = _df_weight['bodymass'].max()
-
-    _base = alt.Chart(_df_weight).properties(width=600, height=300)
-
-    _weight = _base.mark_line(strokeWidth=3, color='red', interpolate="monotone").encode(x=alt.X('dt_interval:T', title='Datum', scale=alt.Scale(domain=[start_date, end_date])), y=alt.Y('weight:Q', title='Vikt (kg)   🟥', scale=alt.Scale(domainMin=df_min_weight, domainMax=df_max_weight)))
-
-    _df_fat = weight_fat_df.filter(pl.col('dt_interval').is_between(start_date, end_date)).with_columns((pl.col('bodyfatpercentage') * 100).rolling_mean(window_size=3, center=True).fill_null(strategy='mean').alias('fat'))
-
-    df_min_fat = _df_fat['bodyfatpercentage'].min() * 100
-    df_max_fat = _df_fat['bodyfatpercentage'].max() * 100
-
-    _fat = alt.Chart(_df_fat).mark_line(strokeWidth=3, interpolate="monotone", color='gray').encode(x=alt.X('dt_interval:T', scale=alt.Scale(domain=[start_date, end_date])), y=alt.Y('fat:Q', title='Fett%   ◻️', scale=alt.Scale(domainMin=df_min_fat, domainMax=df_max_fat)))
-
-    # 2nd axis added
-    _chart = alt.layer(_weight, _fat).resolve_scale(y='independent')
-    mo.output.append(_chart)
-    return
-
-
-@app.cell(hide_code=True)
 def get_walking_distance_from_apple_df(apple_df, interval_input, pl):
     walk_distance_df = apple_df.filter(pl.col('metric') == 'distancewalkingrunning').group_by(['dt', 'metric']).agg(pl.col('value').sum())
 
@@ -562,6 +449,134 @@ def _():
 
 
 @app.cell(column=1, hide_code=True)
+def display_apple_df(apple_file, end_date, mo, pl, start_date):
+    relevant_apple_colums = [
+      "metric",
+      "unit",
+      "value",
+      "date",
+      "dt"
+    ]
+
+    if apple_file.exists():
+        _df = pl.read_parquet(apple_file).filter(pl.col('dt').is_between(start_date, end_date))
+    else:
+        _df = pl.DataFrame({k: [] for k in relevant_apple_colums})
+
+    apple_df = _df
+    mo.md(f'Antal Apple datapunkter {apple_df.height} mellan {start_date} <-> {end_date}')
+
+    # apple_df = pl.DataFrame(apple_data).with_columns(dt=pl.col('date').str.to_date())
+    mo.output.append(mo.md(f'## Utforska all Apple Hälsa data'))
+    mo.output.append(mo.ui.dataframe(apple_df))
+    return (apple_df,)
+
+
+@app.cell(hide_code=True)
+def group_blood_pressure_exclude_duplicates(
+    apple_df,
+    end_date,
+    pl,
+    start_date,
+):
+    blood_pressure_data_grouped = apple_df.select(['dt', 'metric', 'value']).filter(pl.col('metric').is_in(['bloodpressuresystolic', 'bloodpressurediastolic']), pl.col('dt').is_between(start_date, end_date)).group_by(['dt', 'metric']).agg(pl.mean('value')).sort(by='dt')
+    return (blood_pressure_data_grouped,)
+
+
+@app.cell(hide_code=True)
+def display_apple_health_metrics():
+    # apple_df.select('metric').unique()
+    return
+
+
+@app.cell(hide_code=True)
+def explore_blood_pressure_df(
+    activity_type_form,
+    blood_pressure_data_grouped,
+    interval_input,
+    mo,
+    month_text,
+    pl,
+):
+    mo.stop(any(_ is None for _ in activity_type_form.value.values()) is True)
+
+    mo.output.append(mo.md(f'### Utforska blodtrycket för perioden med snitt per {month_text}'))
+
+    blood_pressure_exploded = blood_pressure_data_grouped.pivot('metric', index="dt", values="value")
+
+    blood_pressure_agg = blood_pressure_exploded.with_columns(pl.col('dt').dt.truncate(every=interval_input).alias('dt_interval')).group_by('dt_interval').agg(pl.mean(['bloodpressuresystolic', 'bloodpressurediastolic'])).sort(by='dt_interval')
+
+    mo.output.append(blood_pressure_agg)
+    return (blood_pressure_agg,)
+
+
+@app.cell(hide_code=True)
+def display_blood_pressure_chart(
+    alt,
+    blood_pressure_agg,
+    end_date,
+    month_text,
+    start_date,
+):
+    _base = alt.Chart(blood_pressure_agg).mark_line().encode(
+        x=alt.X('dt_interval:T', title='Datum', scale=alt.Scale(domain=[start_date, end_date])),
+    ).properties(
+        title=f'Medel blodtryck per {month_text}',
+        width=600,
+        height=300,
+    )
+
+    _dia = _base.encode(y=alt.Y('bloodpressurediastolic:Q', title='Dia', scale=alt.Scale(domainMin=40)), color=alt.value('lightblue'))
+    _sys = _base.encode(y=alt.Y('bloodpressuresystolic:Q', title='Sys'), color=alt.value('red'))
+
+    _base + _dia + _sys
+    return
+
+
+@app.cell(hide_code=True)
+def get_weight_fat_df_from_apple_df(apple_df, interval_input, pl):
+    weight_fat_df = apple_df.filter(pl.col('metric').is_in(['bodymass', 'bodyfatpercentage'])).pivot('metric', index='dt', values='value', aggregate_function='mean').with_columns(pl.col('dt').dt.truncate(every=interval_input).alias('dt_interval')).group_by('dt_interval').agg(pl.mean(['bodymass', 'bodyfatpercentage']))
+    return (weight_fat_df,)
+
+
+@app.cell(hide_code=True)
+def display_weight_fat_plot(
+    activity_type_form,
+    alt,
+    end_date,
+    mo,
+    month_text,
+    pl,
+    start_date,
+    weight_fat_df,
+):
+    mo.stop(any(_ is None for _ in activity_type_form.value.values()) is True)
+
+    mo.output.append(mo.md(f'##Vikt och fett% snitt per {month_text}'))
+
+    _df_weight = weight_fat_df.filter((pl.col('bodymass') >= 70), (pl.col('dt_interval').is_between(start_date, end_date))).with_columns(pl.col('bodymass').rolling_mean(window_size=3, center=True).fill_null(strategy='mean').alias('weight'))
+
+    df_min_weight = _df_weight['bodymass'].min()
+    df_max_weight = _df_weight['bodymass'].max()
+
+    _base = alt.Chart(_df_weight).properties(width=600, height=300)
+
+    _weight = _base.mark_line(strokeWidth=3, color='red', interpolate="monotone").encode(x=alt.X('dt_interval:T', title='Datum', scale=alt.Scale(domain=[start_date, end_date])), y=alt.Y('weight:Q', title='Vikt (kg)   🟥', scale=alt.Scale(domainMin=df_min_weight, domainMax=df_max_weight)))
+
+    _df_fat = weight_fat_df.filter(pl.col('dt_interval').is_between(start_date, end_date)).with_columns((pl.col('bodyfatpercentage') * 100).rolling_mean(window_size=3, center=True).fill_null(strategy='mean').alias('fat'))
+
+    df_min_fat = _df_fat['bodyfatpercentage'].min() * 100
+    df_max_fat = _df_fat['bodyfatpercentage'].max() * 100
+
+    _fat = alt.Chart(_df_fat).mark_line(strokeWidth=3, interpolate="monotone", color='gray').encode(x=alt.X('dt_interval:T', scale=alt.Scale(domain=[start_date, end_date])), y=alt.Y('fat:Q', title='Fett%   ◻️', scale=alt.Scale(domainMin=df_min_fat, domainMax=df_max_fat)))
+
+    # 2nd axis added
+    _chart = alt.layer(_weight, _fat).resolve_scale(y='independent')
+    mo.output.append(_chart)
+    return
+
+
+@app.cell(column=2, hide_code=True)
 def start_garmin_download(mo):
     mo.output.append(mo.md('## Ladda in Garmin aktiviteter från API'))
     input_run_garmin_import = mo.ui.run_button(label='Starta')
@@ -865,7 +880,7 @@ def _(Path, garmin_file, mo, pl):
     return
 
 
-@app.cell(column=2, hide_code=True)
+@app.cell(column=3, hide_code=True)
 def upload_apple_health(mo):
     mo.output.append('Ladda in Apple Hälsa data')
     apple_health_upload = mo.ui.file().form()
@@ -936,7 +951,19 @@ def process_apple_health_data(
     
     _all_apple_data.write_parquet(apple_file)
 
-    return (apple_data,)
+    return
+
+
+@app.cell(hide_code=True)
+def count_apple_health_size(apple_file, mo, pl):
+    _count = 0
+    if apple_file.exists():
+        _df = pl.read_parquet(apple_file)
+        _count = _df.height
+    mo.md(f'Antal Apple Hälsa datapunkter tillänglig {_count}')
+
+    _df.columns
+    return
 
 
 @app.cell
