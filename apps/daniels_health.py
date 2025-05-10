@@ -409,8 +409,8 @@ def get_walking_distance_from_apple_df(apple_df, interval_input, pl):
 
 
 @app.cell(hide_code=True)
-def get_run_distance_df_from_garmin(garmin_activities, interval_input, pl):
-    run_distance_df = garmin_activities.filter(pl.col('activityType.typeKey') == 'running').with_columns(pl.col('dt').dt.truncate(every=interval_input).alias('dt_')).with_columns(pl.col('dt_').dt.date().alias('dt_interval')).select('dt_interval', 'distance').group_by('dt_interval').agg(pl.col('distance').sum() / 1000).rename({'distance': 'value'}).with_columns(pl.lit('run').alias('type'))
+def get_run_distance_df_from_garmin(current_garmin_data, interval_input, pl):
+    run_distance_df = current_garmin_data.filter(pl.col('activityType.typeKey') == 'running').with_columns(pl.col('dt').dt.truncate(every=interval_input).alias('dt_')).with_columns(pl.col('dt_').dt.date().alias('dt_interval')).select('dt_interval', 'distance').group_by('dt_interval').agg(pl.col('distance').sum() / 1000).rename({'distance': 'value'}).with_columns(pl.lit('run').alias('type'))
     return (run_distance_df,)
 
 
@@ -860,7 +860,7 @@ def get_garmin_df_and_filter(
         logger.info('Building empty Garmin {garmin_file}')
         all_garmin_data = garmin_activities
     all_garmin_data.write_parquet(garmin_file)
-    return (garmin_activities,)
+    return
 
 
 @app.cell(hide_code=True)
