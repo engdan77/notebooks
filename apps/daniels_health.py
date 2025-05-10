@@ -74,28 +74,6 @@ def define_global_vars(mo):
 
 
 @app.cell(hide_code=True)
-def create_logger():
-    import logging
-
-    # Create a logger object
-    logger = logging.getLogger('health')
-    logger.setLevel(logging.DEBUG)
-
-    # Create a console handler
-    ch = logging.StreamHandler()
-    ch.setLevel(logging.DEBUG)
-
-    # Create a formatter that outputs time in HH:MM
-    formatter = logging.Formatter('%(asctime)s - %(message)s', datefmt='%H:%M')
-    ch.setFormatter(formatter)
-
-    # Add the handler to the logger
-    logger.addHandler(ch)
-
-    return (logger,)
-
-
-@app.cell(hide_code=True)
 def get_date_range_from_form(form, mo):
     mo.stop(form.value is None, mo.md('Fyll i data'))
     interval_input = form.value['interval_input']
@@ -166,95 +144,11 @@ def load_or_empty_current_garmin_data(
     return (current_garmin_data,)
 
 
-@app.cell
-def explore_garmin_dataset(current_garmin_data, mo):
-    mo.ui.dataframe(current_garmin_data, page_size=10)
-    return
-
-
 @app.cell(hide_code=True)
 def get_activities_as_chart(current_garmin_data, pl):
     activities_dist = current_garmin_data.rename({"activityType.typeKey": 'activity'}).group_by(pl.col('activity')).agg(pl.len().alias('count'))
     activities_dist.plot.bar(y='activity:N', x='count:Q').properties(height=100, title='Antal aktiviteter av typ')
     return (activities_dist,)
-
-
-@app.cell(hide_code=True)
-def get_median_pulse_zones_chart(
-    activity_type_form,
-    alt,
-    current_garmin_data,
-    end_date,
-    interval_categories,
-    interval_input,
-    mo,
-    pl,
-    start_date,
-):
-    mo.stop(any(_ is None for _ in activity_type_form.value.values()) is True, mo.md('Välj aktivitet för zoner'))
-
-    activity_input = activity_type_form.value['activity_input']
-    # interval_input = graph_form['interval_input'].value
-
-    month_text = [k for k, v in interval_categories.items() if v == interval_input].pop()
-
-    interval_median_zones = (current_garmin_data.filter(pl.col('activityType.typeKey').eq(activity_input))
-        .with_columns([
-            pl.col("dt").dt.truncate(interval_input).alias("dt_interval"),
-            (pl.col("secsInZone5") / 60),
-            (pl.col("secsInZone4") / 60),
-            (pl.col("secsInZone3") / 60),
-            (pl.col("secsInZone2") / 60),
-            (pl.col("secsInZone1") / 60),
-        ])
-        .group_by("dt_interval")
-        .agg([
-            pl.col("secsInZone1").median().alias("median_zone1"),
-            pl.col("secsInZone2").median().alias("median_zone2"),
-            pl.col("secsInZone3").median().alias("median_zone3"),
-            pl.col("secsInZone4").median().alias("median_zone4"),
-            pl.col("secsInZone5").median().alias("median_zone5"),
-        ])
-    ).filter(pl.col('dt_interval').is_between(start_date, end_date))
-
-    _colors = {'median_zone1': 'gray', 'median_zone2': 'lightblue', 'median_zone3': 'green', 'median_zone4': 'orange', 'median_zone5': 'red'}
-
-
-    interval_median_zones_chart = alt.Chart(interval_median_zones).transform_fold(
-        ["median_zone1", "median_zone2", "median_zone3", "median_zone4", "median_zone5"],
-        as_=['zone', 'median_time']
-    ).mark_bar().encode(
-        x=alt.X('yearmonth(dt_interval):T', title='Månad', scale=alt.Scale(domain=[start_date, end_date])),
-        y=alt.Y('median_time:Q', title='Median tid i minuter'),
-        color=alt.Color('zone:N', scale=alt.Scale(
-            domain=list(_colors.keys()), range=list(_colors.values())), 
-            title='Heart Rate Zones'),
-        tooltip=['dt_interval:T', 'zone:N', 'median_time:Q'],
-        order=alt.Order('zone:N', sort='ascending')
-    ).properties(
-        title=f'Median tid per aktivitet & tider i puls zoner för {month_text}',
-        width=600,
-        height=300,
-    )
-    return activity_input, interval_median_zones_chart, month_text
-
-
-@app.cell(hide_code=True)
-def get_df_for_median_tempo(
-    activity_input,
-    activity_type_form,
-    current_garmin_data,
-    interval_input,
-    mo,
-    pl,
-):
-    mo.stop(any(_ is None for _ in activity_type_form.value.values()) is True, mo.md('Välj aktivitet för zoner'))
-    # mo.stop(activity_for_zones.value is None, mo.md('Välj aktivitet för zoner'))
-
-    df_activity_tempo = current_garmin_data.filter(pl.col('activityType.typeKey').eq(activity_input)).select('dt', 'distance', ((pl.col('duration')/60)/(pl.col('distance')/1000)).alias('mins_per_km'))
-
-    chart_data_mins_per_km = df_activity_tempo.with_columns(pl.col('dt').dt.truncate(interval_input).alias('dt_interval')).group_by('dt_interval').agg(pl.col('mins_per_km').median().alias('mean_mins_per_km'))
-    return chart_data_mins_per_km, df_activity_tempo
 
 
 @app.cell(hide_code=True)
@@ -361,6 +255,23 @@ def get_count_distances_chart(
 
 
 @app.cell(hide_code=True)
+def get_walk_run_distance_chart(
+    alt,
+    end_date,
+    month_text,
+    start_date,
+    walk_run_df,
+):
+    distance_chart = alt.Chart(walk_run_df).mark_bar().encode(x=alt.X('dt_interval', title='Datum', scale=alt.Scale(domain=[start_date, end_date])), y=alt.Y('value', title='kilometer'), color=alt.Color('type', title='Kategori')).properties(
+        title=f'Antal km per {month_text}',
+        width=600,
+        height=300
+    )
+    distance_chart
+    return
+
+
+@app.cell(hide_code=True)
 def chart_count_of_distances(activity_input, alt, current_garmin_data, pl):
     df_distance_in_km = current_garmin_data.filter(pl.col('activityType.typeKey').eq(activity_input)).select('dt', (pl.col('distance')/1000).alias('distance_km'))
 
@@ -401,6 +312,12 @@ def get_records_distance(current_garmin_data, mo, pl):
 
 
 @app.cell(hide_code=True)
+def explore_garmin_dataset(current_garmin_data, mo):
+    mo.ui.dataframe(current_garmin_data, page_size=10)
+    return
+
+
+@app.cell(hide_code=True)
 def get_walking_distance_from_apple_df(apple_df, interval_input, pl):
     walk_distance_df = apple_df.filter(pl.col('metric') == 'distancewalkingrunning').group_by(['dt', 'metric']).agg(pl.col('value').sum())
 
@@ -426,91 +343,112 @@ def get_concatenade_run_walk_df(
     return (walk_run_df,)
 
 
-@app.cell(hide_code=True)
-def get_walk_run_distance_chart(
-    alt,
-    end_date,
-    month_text,
-    start_date,
-    walk_run_df,
-):
-    distance_chart = alt.Chart(walk_run_df).mark_bar().encode(x=alt.X('dt_interval', title='Datum', scale=alt.Scale(domain=[start_date, end_date])), y=alt.Y('value', title='kilometer'), color=alt.Color('type', title='Kategori')).properties(
-        title=f'Antal km per {month_text}',
-        width=600,
-        height=300
-    )
-    distance_chart
-    return
-
-
 @app.cell
 def _():
     return
 
 
-@app.cell(column=1, hide_code=True)
-def display_apple_df(apple_file, end_date, mo, pl, start_date):
-    relevant_apple_colums = [
-      "metric",
-      "unit",
-      "value",
-      "date",
-      "dt"
-    ]
+@app.cell(hide_code=True)
+def create_logger():
+    import logging
 
-    if apple_file.exists():
-        _df = pl.read_parquet(apple_file).filter(pl.col('dt').is_between(start_date, end_date))
-    else:
-        _df = pl.DataFrame({k: [] for k in relevant_apple_colums})
+    # Create a logger object
+    logger = logging.getLogger('health')
+    logger.setLevel(logging.DEBUG)
 
-    apple_df = _df
-    mo.md(f'Antal Apple datapunkter {apple_df.height} mellan {start_date} <-> {end_date}')
+    # Create a console handler
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.DEBUG)
 
-    # apple_df = pl.DataFrame(apple_data).with_columns(dt=pl.col('date').str.to_date())
-    mo.output.append(mo.md(f'## Utforska all Apple Hälsa data'))
-    mo.output.append(mo.ui.dataframe(apple_df))
-    return (apple_df,)
+    # Create a formatter that outputs time in HH:MM
+    formatter = logging.Formatter('%(asctime)s - %(message)s', datefmt='%H:%M')
+    ch.setFormatter(formatter)
+
+    # Add the handler to the logger
+    logger.addHandler(ch)
+
+    return (logger,)
 
 
 @app.cell(hide_code=True)
-def group_blood_pressure_exclude_duplicates(
-    apple_df,
+def get_median_pulse_zones_chart(
+    activity_type_form,
+    alt,
+    current_garmin_data,
     end_date,
+    interval_categories,
+    interval_input,
+    mo,
     pl,
     start_date,
 ):
-    blood_pressure_data_grouped = apple_df.select(['dt', 'metric', 'value']).filter(pl.col('metric').is_in(['bloodpressuresystolic', 'bloodpressurediastolic']), pl.col('dt').is_between(start_date, end_date)).group_by(['dt', 'metric']).agg(pl.mean('value')).sort(by='dt')
-    return (blood_pressure_data_grouped,)
+    mo.stop(any(_ is None for _ in activity_type_form.value.values()) is True, mo.md('Välj aktivitet för zoner'))
+
+    activity_input = activity_type_form.value['activity_input']
+    # interval_input = graph_form['interval_input'].value
+
+    month_text = [k for k, v in interval_categories.items() if v == interval_input].pop()
+
+    interval_median_zones = (current_garmin_data.filter(pl.col('activityType.typeKey').eq(activity_input))
+        .with_columns([
+            pl.col("dt").dt.truncate(interval_input).alias("dt_interval"),
+            (pl.col("secsInZone5") / 60),
+            (pl.col("secsInZone4") / 60),
+            (pl.col("secsInZone3") / 60),
+            (pl.col("secsInZone2") / 60),
+            (pl.col("secsInZone1") / 60),
+        ])
+        .group_by("dt_interval")
+        .agg([
+            pl.col("secsInZone1").median().alias("median_zone1"),
+            pl.col("secsInZone2").median().alias("median_zone2"),
+            pl.col("secsInZone3").median().alias("median_zone3"),
+            pl.col("secsInZone4").median().alias("median_zone4"),
+            pl.col("secsInZone5").median().alias("median_zone5"),
+        ])
+    ).filter(pl.col('dt_interval').is_between(start_date, end_date))
+
+    _colors = {'median_zone1': 'gray', 'median_zone2': 'lightblue', 'median_zone3': 'green', 'median_zone4': 'orange', 'median_zone5': 'red'}
+
+
+    interval_median_zones_chart = alt.Chart(interval_median_zones).transform_fold(
+        ["median_zone1", "median_zone2", "median_zone3", "median_zone4", "median_zone5"],
+        as_=['zone', 'median_time']
+    ).mark_bar().encode(
+        x=alt.X('yearmonth(dt_interval):T', title='Månad', scale=alt.Scale(domain=[start_date, end_date])),
+        y=alt.Y('median_time:Q', title='Median tid i minuter'),
+        color=alt.Color('zone:N', scale=alt.Scale(
+            domain=list(_colors.keys()), range=list(_colors.values())), 
+            title='Heart Rate Zones'),
+        tooltip=['dt_interval:T', 'zone:N', 'median_time:Q'],
+        order=alt.Order('zone:N', sort='ascending')
+    ).properties(
+        title=f'Median tid per aktivitet & tider i puls zoner för {month_text}',
+        width=600,
+        height=300,
+    )
+    return activity_input, interval_median_zones_chart, month_text
 
 
 @app.cell(hide_code=True)
-def display_apple_health_metrics():
-    # apple_df.select('metric').unique()
-    return
-
-
-@app.cell(hide_code=True)
-def explore_blood_pressure_df(
+def get_df_for_median_tempo(
+    activity_input,
     activity_type_form,
-    blood_pressure_data_grouped,
+    current_garmin_data,
     interval_input,
     mo,
-    month_text,
     pl,
 ):
-    mo.stop(any(_ is None for _ in activity_type_form.value.values()) is True)
+    mo.stop(any(_ is None for _ in activity_type_form.value.values()) is True, mo.md('Välj aktivitet för zoner'))
+    # mo.stop(activity_for_zones.value is None, mo.md('Välj aktivitet för zoner'))
 
-    mo.output.append(mo.md(f'### Utforska blodtrycket för perioden med snitt per {month_text}'))
+    df_activity_tempo = current_garmin_data.filter(pl.col('activityType.typeKey').eq(activity_input)).select('dt', 'distance', ((pl.col('duration')/60)/(pl.col('distance')/1000)).alias('mins_per_km'))
 
-    blood_pressure_exploded = blood_pressure_data_grouped.pivot('metric', index="dt", values="value")
-
-    blood_pressure_agg = blood_pressure_exploded.with_columns(pl.col('dt').dt.truncate(every=interval_input).alias('dt_interval')).group_by('dt_interval').agg(pl.mean(['bloodpressuresystolic', 'bloodpressurediastolic'])).sort(by='dt_interval')
-
-    mo.output.append(blood_pressure_agg)
-    return (blood_pressure_agg,)
+    chart_data_mins_per_km = df_activity_tempo.with_columns(pl.col('dt').dt.truncate(interval_input).alias('dt_interval')).group_by('dt_interval').agg(pl.col('mins_per_km').median().alias('mean_mins_per_km'))
+    return chart_data_mins_per_km, df_activity_tempo
 
 
-@app.cell(hide_code=True)
+@app.cell(column=1, hide_code=True)
 def display_blood_pressure_chart(
     alt,
     blood_pressure_agg,
@@ -531,12 +469,6 @@ def display_blood_pressure_chart(
 
     _base + _dia + _sys
     return
-
-
-@app.cell(hide_code=True)
-def get_weight_fat_df_from_apple_df(apple_df, interval_input, pl):
-    weight_fat_df = apple_df.filter(pl.col('metric').is_in(['bodymass', 'bodyfatpercentage'])).pivot('metric', index='dt', values='value', aggregate_function='mean').with_columns(pl.col('dt').dt.truncate(every=interval_input).alias('dt_interval')).group_by('dt_interval').agg(pl.mean(['bodymass', 'bodyfatpercentage']))
-    return (weight_fat_df,)
 
 
 @app.cell(hide_code=True)
@@ -574,6 +506,74 @@ def display_weight_fat_plot(
     _chart = alt.layer(_weight, _fat).resolve_scale(y='independent')
     mo.output.append(_chart)
     return
+
+
+@app.cell(hide_code=True)
+def explore_blood_pressure_df(
+    activity_type_form,
+    blood_pressure_data_grouped,
+    interval_input,
+    mo,
+    month_text,
+    pl,
+):
+    mo.stop(any(_ is None for _ in activity_type_form.value.values()) is True)
+
+    mo.output.append(mo.md(f'### Utforska blodtrycket för perioden med snitt per {month_text}'))
+
+    blood_pressure_exploded = blood_pressure_data_grouped.pivot('metric', index="dt", values="value")
+
+    blood_pressure_agg = blood_pressure_exploded.with_columns(pl.col('dt').dt.truncate(every=interval_input).alias('dt_interval')).group_by('dt_interval').agg(pl.mean(['bloodpressuresystolic', 'bloodpressurediastolic'])).sort(by='dt_interval')
+
+    mo.output.append(blood_pressure_agg)
+    return (blood_pressure_agg,)
+
+
+@app.cell(hide_code=True)
+def display_apple_df(apple_file, end_date, mo, pl, start_date):
+    relevant_apple_colums = [
+      "metric",
+      "unit",
+      "value",
+      "date",
+      "dt"
+    ]
+
+    if apple_file.exists():
+        _df = pl.read_parquet(apple_file).filter(pl.col('dt').is_between(start_date, end_date))
+    else:
+        _df = pl.DataFrame({k: [] for k in relevant_apple_colums})
+
+    apple_df = _df
+    mo.md(f'Antal Apple datapunkter {apple_df.height} mellan {start_date} <-> {end_date}')
+
+    # apple_df = pl.DataFrame(apple_data).with_columns(dt=pl.col('date').str.to_date())
+    mo.output.append(mo.md(f'## Utforska all Apple Hälsa data'))
+    mo.output.append(mo.ui.dataframe(apple_df))
+    return (apple_df,)
+
+
+@app.cell(hide_code=True)
+def get_weight_fat_df_from_apple_df(apple_df, interval_input, pl):
+    weight_fat_df = apple_df.filter(pl.col('metric').is_in(['bodymass', 'bodyfatpercentage'])).pivot('metric', index='dt', values='value', aggregate_function='mean').with_columns(pl.col('dt').dt.truncate(every=interval_input).alias('dt_interval')).group_by('dt_interval').agg(pl.mean(['bodymass', 'bodyfatpercentage']))
+    return (weight_fat_df,)
+
+
+@app.cell(hide_code=True)
+def display_apple_health_metrics():
+    # apple_df.select('metric').unique()
+    return
+
+
+@app.cell(hide_code=True)
+def group_blood_pressure_exclude_duplicates(
+    apple_df,
+    end_date,
+    pl,
+    start_date,
+):
+    blood_pressure_data_grouped = apple_df.select(['dt', 'metric', 'value']).filter(pl.col('metric').is_in(['bloodpressuresystolic', 'bloodpressurediastolic']), pl.col('dt').is_between(start_date, end_date)).group_by(['dt', 'metric']).agg(pl.mean('value')).sort(by='dt')
+    return (blood_pressure_data_grouped,)
 
 
 @app.cell(column=2, hide_code=True)
@@ -692,43 +692,6 @@ def get_garmin_raw_data(
     dob_ = get_garmin_profile()['userData']['birthDate']
     dob = datetime.date.fromisoformat(dob_).year
     return cache, dob, gc, get_raw_garmin_data
-
-
-@app.cell(hide_code=True)
-def get_first_garmin_activity(cache, datetime, gc, logger, mo):
-    import time
-
-    @cache
-    def get_garmin_activity_by_offset(offset: int):
-        time.sleep(1)
-        g = gc.get_activities(limit=1, start=offset)
-        return g
-
-
-    def get_first_garmin_activity() -> datetime.datetime:
-        first_garmin_activity = None
-        with mo.status.spinner('Söker after första Garmin aktivitet') as _spinner:
-            _start = 0
-            while True:
-                _activity_found = get_garmin_activity_by_offset(_start)
-                if not _activity_found:
-                    logger.info(f'Ingen aktivitet vid {_start}')
-                    break
-                _start += 100
-                _spinner.update(f'Söker efter {_start}')
-            while True:
-                _activity_found = get_garmin_activity_by_offset(_start)
-                if _activity_found:
-                    _dt = _activity_found[0]['startTimeLocal']
-                    logger.info(f'Last activity offset {_dt}')
-                    first_garmin_activity = _dt
-                    break
-                _start -= 1
-                _spinner.update(f'Söker efter {_start}')
-        r = datetime.datetime.strptime(first_garmin_activity, '%Y-%m-%d %H:%M:%S').date()
-        mo.output.append(mo.md(f'Hittade första datumet lagrad hos Garmin {r:%Y-%m-%d}'))
-        return r
-    return (get_first_garmin_activity,)
 
 
 @app.cell(hide_code=True)
@@ -880,6 +843,43 @@ def _(Path, garmin_file, mo, pl):
     return
 
 
+@app.cell(hide_code=True)
+def get_first_garmin_activity(cache, datetime, gc, logger, mo):
+    import time
+
+    @cache
+    def get_garmin_activity_by_offset(offset: int):
+        time.sleep(1)
+        g = gc.get_activities(limit=1, start=offset)
+        return g
+
+
+    def get_first_garmin_activity() -> datetime.datetime:
+        first_garmin_activity = None
+        with mo.status.spinner('Söker after första Garmin aktivitet') as _spinner:
+            _start = 0
+            while True:
+                _activity_found = get_garmin_activity_by_offset(_start)
+                if not _activity_found:
+                    logger.info(f'Ingen aktivitet vid {_start}')
+                    break
+                _start += 100
+                _spinner.update(f'Söker efter {_start}')
+            while True:
+                _activity_found = get_garmin_activity_by_offset(_start)
+                if _activity_found:
+                    _dt = _activity_found[0]['startTimeLocal']
+                    logger.info(f'Last activity offset {_dt}')
+                    first_garmin_activity = _dt
+                    break
+                _start -= 1
+                _spinner.update(f'Söker efter {_start}')
+        r = datetime.datetime.strptime(first_garmin_activity, '%Y-%m-%d %H:%M:%S').date()
+        mo.output.append(mo.md(f'Hittade första datumet lagrad hos Garmin {r:%Y-%m-%d}'))
+        return r
+    return (get_first_garmin_activity,)
+
+
 @app.cell(column=3, hide_code=True)
 def upload_apple_health(mo):
     mo.output.append('Ladda in Apple Hälsa data')
@@ -961,13 +961,6 @@ def count_apple_health_size(apple_file, mo, pl):
         _df = pl.read_parquet(apple_file)
         _count = _df.height
     mo.md(f'Antal Apple Hälsa datapunkter tillänglig {_count}')
-
-    _df.columns
-    return
-
-
-@app.cell
-def _():
     return
 
 
