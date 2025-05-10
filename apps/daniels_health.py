@@ -183,7 +183,6 @@ def get_median_pulse_zones_chart(
     alt,
     current_garmin_data,
     end_date,
-    graph_form,
     interval_categories,
     interval_input,
     mo,
@@ -192,7 +191,7 @@ def get_median_pulse_zones_chart(
 ):
     mo.stop(any(_ is None for _ in activity_type_form.value.values()) is True, mo.md('Välj aktivitet för zoner'))
 
-    activity_input = graph_form['activity_input'].value
+    activity_input = activity_type_form.value['activity_input']
     # interval_input = graph_form['interval_input'].value
 
     month_text = [k for k, v in interval_categories.items() if v == interval_input].pop()
@@ -241,13 +240,13 @@ def get_median_pulse_zones_chart(
 @app.cell(hide_code=True)
 def get_df_for_median_tempo(
     activity_input,
+    activity_type_form,
     current_garmin_data,
-    graph_form,
     interval_input,
     mo,
     pl,
 ):
-    mo.stop(any(_ is None for _ in graph_form.value.values()) is True, mo.md('Välj aktivitet för zoner'))
+    mo.stop(any(_ is None for _ in activity_type_form.value.values()) is True, mo.md('Välj aktivitet för zoner'))
     # mo.stop(activity_for_zones.value is None, mo.md('Välj aktivitet för zoner'))
 
     df_activity_tempo = current_garmin_data.filter(pl.col('activityType.typeKey').eq(activity_input)).select('dt', 'distance', ((pl.col('duration')/60)/(pl.col('distance')/1000)).alias('mins_per_km'))
@@ -258,10 +257,10 @@ def get_df_for_median_tempo(
 
 @app.cell(hide_code=True)
 def get_chart_zones_and_temp(
+    activity_type_form,
     alt,
     chart_data_mins_per_km,
     end_date,
-    graph_form,
     interval_median_zones_chart,
     mo,
     pl,
@@ -284,7 +283,7 @@ def get_chart_zones_and_temp(
     '''
 
     # mo.stop(activity_for_zones.value is None, mo.md('Välj aktivitet för zoner'))
-    mo.stop(any(_ is None for _ in graph_form.value.values()) is True, mo.md('Välj aktivitet för zoner'))
+    mo.stop(any(_ is None for _ in activity_type_form.value.values()) is True, mo.md('Välj aktivitet för zoner'))
 
     min_tempo = chart_data_mins_per_km.select('mean_mins_per_km').min()['mean_mins_per_km'].first() - 0.5
     max_tempo = chart_data_mins_per_km.select('mean_mins_per_km').max()['mean_mins_per_km'].first() + 0.5
