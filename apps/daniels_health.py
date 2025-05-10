@@ -74,14 +74,6 @@ def define_global_vars(mo):
 
 
 @app.cell(hide_code=True)
-def get_date_range_from_form(form, mo):
-    mo.stop(form.value is None, mo.md('Fyll i data'))
-    interval_input = form.value['interval_input']
-    start_date, end_date = form.value['date_range']
-    return end_date, interval_input, start_date
-
-
-@app.cell(hide_code=True)
 def form_for_display(mo):
     interval_categories = {'dag': '1d', 'vecka': '1w', 'månad': '1mo', 'år': '1y'}
 
@@ -318,7 +310,9 @@ def explore_garmin_dataset(current_garmin_data, mo):
 
 
 @app.cell(hide_code=True)
-def get_walking_distance_from_apple_df(apple_df, interval_input, pl):
+def get_walking_distance_from_apple_df(apple_df, interval_input, mo, pl):
+    mo.stop(apple_df.height == 0)
+
     walk_distance_df = apple_df.filter(pl.col('metric') == 'distancewalkingrunning').group_by(['dt', 'metric']).agg(pl.col('value').sum())
 
     walk_distance_df = walk_distance_df.with_columns(pl.col('dt').dt.truncate(every=interval_input).alias('dt_interval'), pl.lit('walk').alias('type')).select('dt_interval', 'value', 'type')
@@ -326,7 +320,22 @@ def get_walking_distance_from_apple_df(apple_df, interval_input, pl):
 
 
 @app.cell(hide_code=True)
-def get_run_distance_df_from_garmin(current_garmin_data, interval_input, pl):
+def get_date_range_from_form(form, mo):
+    mo.stop(form.value is None, mo.md('Fyll i data'))
+    interval_input = form.value['interval_input']
+    start_date, end_date = form.value['date_range']
+    return end_date, interval_input, start_date
+
+
+@app.cell(hide_code=True)
+def get_run_distance_df_from_garmin(
+    current_garmin_data,
+    interval_input,
+    mo,
+    pl,
+):
+    mo.stop(current_garmin_data.height == 0)
+
     run_distance_df = current_garmin_data.filter(pl.col('activityType.typeKey') == 'running').with_columns(pl.col('dt').dt.truncate(every=interval_input).alias('dt_')).with_columns(pl.col('dt_').dt.date().alias('dt_interval')).select('dt_interval', 'distance').group_by('dt_interval').agg(pl.col('distance').sum() / 1000).rename({'distance': 'value'}).with_columns(pl.lit('run').alias('type'))
     return (run_distance_df,)
 
@@ -554,7 +563,9 @@ def display_apple_df(apple_file, end_date, mo, pl, start_date):
 
 
 @app.cell(hide_code=True)
-def get_weight_fat_df_from_apple_df(apple_df, interval_input, pl):
+def get_weight_fat_df_from_apple_df(apple_df, interval_input, mo, pl):
+    mo.stop(apple_df.height == 0)
+
     weight_fat_df = apple_df.filter(pl.col('metric').is_in(['bodymass', 'bodyfatpercentage'])).pivot('metric', index='dt', values='value', aggregate_function='mean').with_columns(pl.col('dt').dt.truncate(every=interval_input).alias('dt_interval')).group_by('dt_interval').agg(pl.mean(['bodymass', 'bodyfatpercentage']))
     return (weight_fat_df,)
 
@@ -600,7 +611,7 @@ def get_garmin_credentials(dotenv, mo, os):
         Du kan även skapa en `.env` fil med följande `GARMIN_USERNAME` samt `GARMIN_PASSWORD`
 
         Användarnamn: {username}
-    
+
         Lösenord: {password}
         """).batch(username=_u, password=_p).form()
         mo.output.append(garmin_login_form)
@@ -941,14 +952,14 @@ def process_apple_health_data(
 
     with mo.status.spinner('Processar Apple hälsa data'):
         apple_data = open_apple_health_zip(apple_health_content)
-    
+
     _df = pl.DataFrame(apple_data).with_columns(dt=pl.col('date').str.to_date())
     if apple_file.exists():
         _existing_df = pl.read_parquet(apple_file)
         _all_apple_data = pl.concat([_existing_df, _df], how='align').unique()
     else:
         _all_apple_data = _df
-    
+
     _all_apple_data.write_parquet(apple_file)
 
     return
