@@ -71,8 +71,20 @@ def imports_and_global_funcs(mo, running_locally):
 
     def read_df(loc) -> pl.DataFrame:
         # Due to need workaround for remotely loading Parquete files - https://github.com/pola-rs/polars/issues/20876
-        r = pl.read_parquet(loc)
-        return r
+        _df = None
+        if not running_locally:
+            mo.output.append(mo.md('Hämtar data från URL'))
+            import requests
+            import pyarrow.parquet as pq
+            r = requests.get(loc, allow_redirects=True)
+            r.raise_for_status()
+            with open('data.parquet', 'wb') as f:
+                f.write(r.content)
+            table = pq.read_table('data.parquet')
+            _df = pl.from_arrow(table)
+        else: 
+            _df = pl.read_parquet(loc)
+        return _df
     return alt, datetime, file_exists, os, pl
 
 
