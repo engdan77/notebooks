@@ -40,15 +40,16 @@ def check_if_locally():
 
 
 @app.cell(hide_code=True)
-def imports_and_global_funcs(mo, running_locally):
+def imports_and_global_funcs(logger, mo, running_locally):
     import polars as pl
     import altair as alt
     import json
     import os
     import datetime
     import sys
-    import pyarrow
+    from pyarrow import parquet as pq
     import requests
+    import pyodide
 
     def is_wasm() -> bool:
         return "pyodide" in sys.modules
@@ -73,16 +74,22 @@ def imports_and_global_funcs(mo, running_locally):
         return loc.exists()
 
 
-    def read_df(loc) -> pl.DataFrame:
+    async def async_get(loc):
+        r = await pyodide.http.pyfetch(loc)
+        c = await r.bytes()
+        logger.info(f'Laddade ned {loc} med storleken {len(c)} bytes')
+        return c
+    
+
+    async def read_df(loc) -> pl.DataFrame:
         # Due to need workaround for remotely loading Parquete files - https://github.com/pola-rs/polars/issues/20876
         _df = None
         if not running_locally:
             mo.output.append(mo.md('Hämtar data från URL'))
-            r = requests.get(loc, allow_redirects=True)
-            r.raise_for_status()
+            c = await async_get(loc)
             with open('data.parquet', 'wb') as f:
-                f.write(r.content)
-            table = pyarrow.parquet.read_table('data.parquet')
+                f.write(c)
+            table = pq.read_table('data.parquet')
             _df = pl.from_arrow(table)
         else: 
             _df = pl.read_parquet(loc)
@@ -129,7 +136,7 @@ def select_activity_for_pulse_zones_chart(activities_dist, mo):
 
 
 @app.cell(hide_code=True)
-def load_or_empty_current_garmin_data(
+async def load_or_empty_current_garmin_data(
     end_date,
     file_exists,
     garmin_file,
@@ -156,7 +163,7 @@ def load_or_empty_current_garmin_data(
     ]
 
     if file_exists(garmin_file):
-        _df = read_df(garmin_file)
+        _df = await read_df(garmin_file)
         current_garmin_data = _df.filter(pl.col('dt').is_between(start_date, end_date))
     else:
         current_garmin_data = pl.DataFrame({k: [] for k in relevant_garmin_colums})
@@ -736,7 +743,7 @@ def get_garmin_raw_data(
 
 
 @app.cell(hide_code=True)
-def get_garmin_df_and_filter(
+async def get_garmin_df_and_filter(
     datetime,
     dob,
     file_exists,
@@ -859,7 +866,7 @@ def get_garmin_df_and_filter(
     if file_exists(garmin_file):
         # existing_df = pl.read_ndjson(_fn, schema_overrides={"dt": pl.Datetime})
         logger.info(f'Loading existing Garmin {garmin_file} and updating with existing')
-        existing_df = read_df(garmin_file)
+        existing_df = await read_df(garmin_file)
         all_garmin_data = pl.concat([existing_df, garmin_activities], how='align').unique()
     else:
         logger.info('Building empty Garmin {garmin_file}')
@@ -869,10 +876,10 @@ def get_garmin_df_and_filter(
 
 
 @app.cell(hide_code=True)
-def _(file_exists, garmin_file, mo, read_df):
+async def _(file_exists, garmin_file, mo, read_df):
     mo.stop(file_exists(garmin_file) is False)
 
-    _df = read_df(garmin_file)
+    _df = await read_df(garmin_file)
     mo.output.append(_df)
 
     # _sorted = _df.select('dt').sort(by='dt')
@@ -931,7 +938,7 @@ def upload_apple_health(mo):
 
 
 @app.cell(hide_code=True)
-def process_apple_health_data(
+async def process_apple_health_data(
     HealthData,
     NamedTemporaryFile,
     Path,
@@ -988,7 +995,7 @@ def process_apple_health_data(
 
     _df = pl.DataFrame(apple_data).with_columns(dt=pl.col('date').str.to_date())
     if file_exists(apple_file):
-        _existing_df = read_df(apple_file)
+        _existing_df = await read_df(apple_file)
         _all_apple_data = pl.concat([_existing_df, _df], how='align').unique()
     else:
         _all_apple_data = _df
@@ -999,10 +1006,10 @@ def process_apple_health_data(
 
 
 @app.cell(hide_code=True)
-def count_apple_health_size(apple_file, file_exists, mo, read_df):
+async def count_apple_health_size(apple_file, file_exists, mo, read_df):
     _count = 0
     if file_exists(apple_file):
-        _df = read_df(apple_file)
+        _df = await read_df(apple_file)
         _count = _df.height
     mo.md(f'Antal Apple Hälsa datapunkter tillänglig {_count}')
     return
