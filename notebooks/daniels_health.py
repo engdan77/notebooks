@@ -1,3 +1,18 @@
+# /// script
+# requires-python = ">=3.12"
+# dependencies = [
+#     "altair==5.5.0",
+#     "apple-health==2.0.0",
+#     "health==1.4",
+#     "marimo",
+#     "polars==1.29.0",
+#     "pyarrow==20.0.0",
+#     "python-dotenv==1.1.0",
+#     "requests==2.32.3",
+#     "wat==0.6.0",
+# ]
+# ///
+
 import marimo
 
 __generated_with = "0.13.6"
@@ -76,7 +91,7 @@ def imports_and_global_funcs(logger, mo, running_locally):
             _dt = datetime.datetime(dt.year, dt.month, dt.day)
         elif isinstance(dt, datetime.datetime):
             _dt = dt
-        return alt.DateTime(year=_dt.year, month=_dt.month, day=_dt.day, hours=_dt.hour, minutes=_dt.minute)
+        return alt.DateTime(year=_dt.year, month=_dt.month, date=_dt.day, hours=_dt.hour, minutes=_dt.minute)
     return alt, datetime, file_exists, is_wasm, os, pl, read_df, to_alt_dt
 
 
