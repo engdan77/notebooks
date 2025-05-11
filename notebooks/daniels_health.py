@@ -187,6 +187,8 @@ def get_chart_zones_and_temp(
     mo,
     pl,
     start_date,
+    to_alt,
+    to_alt_dt,
 ):
     '''
     This example will enforce pan/zoom that is not desired - so lean towards using Altair object
@@ -214,7 +216,7 @@ def get_chart_zones_and_temp(
         strokeWidth=5,
         color='red',
         ).encode(
-        x=alt.X('dt_interval:T', scale=alt.Scale(domain=[start_date, end_date])),
+        x=alt.X('dt_interval:T', scale=alt.Scale(domain=[to_alt_dt(start_date), to_alt(end_date)])),
         y=alt.Y('mean_mins_per_km', scale=alt.Scale(domain=[min_tempo, max_tempo]))   
     ).properties(
         title='Median min/km hastighet för aktivitet (tempo)',
@@ -286,9 +288,10 @@ def get_walk_run_distance_chart(
     end_date,
     month_text,
     start_date,
+    to_alt_dt,
     walk_run_df,
 ):
-    distance_chart = alt.Chart(walk_run_df).mark_bar().encode(x=alt.X('dt_interval', title='Datum', scale=alt.Scale(domain=[start_date, end_date])), y=alt.Y('value', title='kilometer'), color=alt.Color('type', title='Kategori')).properties(
+    distance_chart = alt.Chart(walk_run_df).mark_bar().encode(x=alt.X('dt_interval', title='Datum', scale=alt.Scale(domain=[to_alt_dt(start_date), to_alt_dt(end_date)])), y=alt.Y('value', title='kilometer'), color=alt.Color('type', title='Kategori')).properties(
         title=f'Antal km per {month_text}',
         width=600,
         height=300
@@ -506,9 +509,10 @@ def display_blood_pressure_chart(
     end_date,
     month_text,
     start_date,
+    to_alt_dt,
 ):
     _base = alt.Chart(blood_pressure_agg).mark_line().encode(
-        x=alt.X('dt_interval:T', title='Datum', scale=alt.Scale(domain=[start_date, end_date])),
+        x=alt.X('dt_interval:T', title='Datum', scale=alt.Scale(domain=[to_alt_dt(start_date), to_alt_dt(end_date)])),
     ).properties(
         title=f'Medel blodtryck per {month_text}',
         width=600,
