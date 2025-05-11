@@ -187,7 +187,6 @@ def get_chart_zones_and_temp(
     mo,
     pl,
     start_date,
-    to_alt,
     to_alt_dt,
 ):
     '''
@@ -216,7 +215,7 @@ def get_chart_zones_and_temp(
         strokeWidth=5,
         color='red',
         ).encode(
-        x=alt.X('dt_interval:T', scale=alt.Scale(domain=[to_alt_dt(start_date), to_alt(end_date)])),
+        x=alt.X('dt_interval:T', scale=alt.Scale(domain=[to_alt_dt(start_date), to_alt_dt(end_date)])),
         y=alt.Y('mean_mins_per_km', scale=alt.Scale(domain=[min_tempo, max_tempo]))   
     ).properties(
         title='Median min/km hastighet för aktivitet (tempo)',
