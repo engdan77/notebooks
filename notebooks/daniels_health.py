@@ -556,7 +556,7 @@ def display_weight_fat_plot(
     df_min_fat = _df_fat['bodyfatpercentage'].min() * 100
     df_max_fat = _df_fat['bodyfatpercentage'].max() * 100
 
-    _fat = alt.Chart(_df_fat).mark_line(strokeWidth=3, interpolate="monotone", color='gray').encode(x=alt.X('dt_interval:T', scale=alt.Scale(domain=[start_date, end_date])), y=alt.Y('fat:Q', title='Fett%   ◻️', scale=alt.Scale(domainMin=df_min_fat, domainMax=df_max_fat)))
+    _fat = alt.Chart(_df_fat).mark_line(strokeWidth=3, interpolate="monotone", color='gray').encode(x=alt.X('dt_interval:T', scale=alt.Scale(domain=[to_alt_dt(start_date), to_alt_dt(end_date)])), y=alt.Y('fat:Q', title='Fett%   ◻️', scale=alt.Scale(domainMin=df_min_fat, domainMax=df_max_fat)))
 
     # 2nd axis added
     _chart = alt.layer(_weight, _fat).resolve_scale(y='independent')
