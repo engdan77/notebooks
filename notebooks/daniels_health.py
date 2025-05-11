@@ -535,6 +535,7 @@ def display_weight_fat_plot(
     month_text,
     pl,
     start_date,
+    to_alt_dt,
     weight_fat_df,
 ):
     mo.stop(any(_ is None for _ in activity_type_form.value.values()) is True)
@@ -548,7 +549,7 @@ def display_weight_fat_plot(
 
     _base = alt.Chart(_df_weight).properties(width=600, height=300)
 
-    _weight = _base.mark_line(strokeWidth=3, color='red', interpolate="monotone").encode(x=alt.X('dt_interval:T', title='Datum', scale=alt.Scale(domain=[start_date, end_date])), y=alt.Y('weight:Q', title='Vikt (kg)   🟥', scale=alt.Scale(domainMin=df_min_weight, domainMax=df_max_weight)))
+    _weight = _base.mark_line(strokeWidth=3, color='red', interpolate="monotone").encode(x=alt.X('dt_interval:T', title='Datum', scale=alt.Scale(domain=[to_alt_dt(start_date), to_alt_dt(end_date)])), y=alt.Y('weight:Q', title='Vikt (kg)   🟥', scale=alt.Scale(domainMin=df_min_weight, domainMax=df_max_weight)))
 
     _df_fat = weight_fat_df.filter(pl.col('dt_interval').is_between(start_date, end_date)).with_columns((pl.col('bodyfatpercentage') * 100).rolling_mean(window_size=3, center=True).fill_null(strategy='mean').alias('fat'))
 
