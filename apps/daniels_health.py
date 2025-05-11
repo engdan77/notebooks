@@ -34,17 +34,11 @@ def check_if_locally():
     import marimo as mo
     from pathlib import Path
     running_locally = isinstance(mo.notebook_location(), Path)
-
-    def file_exists(loc) -> bool:
-        # Check if the Path (locally) or URLPath (remote) exists
-        if not running_locally:
-            return True  # Assume if run as WASM that file exists
-        return loc.exists()
-    return Path, file_exists, mo
+    return Path, mo, running_locally
 
 
 @app.cell(hide_code=True)
-def imports(mo):
+def imports_and_global_funcs(mo, running_locally):
     import polars as pl
     import altair as alt
     import json
@@ -66,7 +60,20 @@ def imports(mo):
     ''')
     else:
         mo.output.append(mo.md('Kör som WASM'))
-    return alt, datetime, os, pl
+
+
+    def file_exists(loc) -> bool:
+        # Check if the Path (locally) or URLPath (remote) exists
+        if not running_locally:
+            return True  # Assume if run as WASM that file exists
+        return loc.exists()
+
+
+    def read_df(loc) -> pl.DataFrame:
+        # Due to need workaround for remotely loading Parquete files - https://github.com/pola-rs/polars/issues/20876
+        r = pl.read_parquet(loc)
+        return r
+    return alt, datetime, file_exists, os, pl
 
 
 @app.cell(hide_code=True)
@@ -356,11 +363,6 @@ def get_concatenade_run_walk_df(
 ):
     walk_run_df = pl.concat([walk_distance_df, run_distance_df]).sort(by='dt_interval').filter(pl.col('dt_interval').is_between(start_date, end_date))
     return (walk_run_df,)
-
-
-@app.cell
-def _():
-    return
 
 
 @app.cell(hide_code=True)
