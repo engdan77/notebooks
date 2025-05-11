@@ -1,30 +1,3 @@
-# /// script
-# requires-python = ">=3.12"
-# dependencies = [
-#     "altair==5.5.0",
-#     "appdirs==1.4.4",
-#     "apple-health==2.0.0",
-#     "dotenv==0.9.9",
-#     "duckdb==1.2.2",
-#     "garminconnect==0.2.26",
-#     "loguru==0.7.3",
-#     "marimo",
-#     "metrics-collector==0.2.0",
-#     "openai==1.73.0",
-#     "pandas==2.2.3",
-#     "persist-cache==0.4.3",
-#     "polars[pyarrow]==1.27.1",
-#     "pyarrow==20.0.0",
-#     "python-dotenv==1.1.0",
-#     "requests==2.32.3",
-#     "sqlalchemy==2.0.40",
-#     "sqlglot==26.13.0",
-#     "vegafusion==2.0.2",
-#     "vl-convert-python==1.7.0",
-#     "wat==0.6.0",
-# ]
-# ///
-
 import marimo
 
 __generated_with = "0.13.6"
@@ -94,7 +67,17 @@ def imports_and_global_funcs(logger, mo, running_locally):
         else: 
             _df = pl.read_parquet(loc)
         return _df
-    return alt, datetime, file_exists, is_wasm, os, pl, read_df
+
+
+    def to_alt_dt(dt: datetime.datetime | datetime.date | str) -> alt.DateTime:
+        if isinstance(dt, str):
+            _dt = datetime.datetime.fromisoformat(dt)
+        elif isinstance(dt, datetime.date):
+            _dt = datetime.datetime(dt.year, dt.month, dt.day)
+        elif isinstance(dt, datetime.datetime):
+            _dt = dt
+        return alt.DateTime(year=_dt.year, month=_dt.month, day=_dt.day, hours=_dt.hour, minutes=_dt.minute)
+    return alt, datetime, file_exists, is_wasm, os, pl, read_df, to_alt_dt
 
 
 @app.cell(hide_code=True)
@@ -434,6 +417,7 @@ def get_median_pulse_zones_chart(
     mo,
     pl,
     start_date,
+    to_alt_dt,
 ):
     mo.stop(any(_ is None for _ in activity_type_form.value.values()) is True, mo.md('Välj aktivitet för zoner'))
 
@@ -463,12 +447,11 @@ def get_median_pulse_zones_chart(
 
     _colors = {'median_zone1': 'gray', 'median_zone2': 'lightblue', 'median_zone3': 'green', 'median_zone4': 'orange', 'median_zone5': 'red'}
 
-
     interval_median_zones_chart = alt.Chart(interval_median_zones).transform_fold(
         ["median_zone1", "median_zone2", "median_zone3", "median_zone4", "median_zone5"],
         as_=['zone', 'median_time']
     ).mark_bar().encode(
-        x=alt.X('yearmonth(dt_interval):T', title='Månad', scale=alt.Scale(domain=[start_date, end_date])),
+        x=alt.X('yearmonth(dt_interval):T', title='Månad', scale=alt.Scale(domain=[to_alt_dt(start_date), to_alt_dt(end_date)])),
         y=alt.Y('median_time:Q', title='Median tid i minuter'),
         color=alt.Color('zone:N', scale=alt.Scale(
             domain=list(_colors.keys()), range=list(_colors.values())), 
