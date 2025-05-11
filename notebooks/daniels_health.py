@@ -237,6 +237,7 @@ def get_count_distances_chart(
     month_text,
     pl,
     start_date,
+    to_alt_dt,
 ):
     _colors = {'<3km': 'green', 
                '3-5km': 'yellow', 
@@ -264,7 +265,7 @@ def get_count_distances_chart(
         alt.Chart(_activity_counts)
         .mark_bar()
         .encode(
-            x=alt.X("dt_interval:T", title="Month", scale=alt.Scale(domain=[start_date, end_date])),
+            x=alt.X("dt_interval:T", title="Month", scale=alt.Scale(domain=[to_alt_dt(start_date), to_alt_dt(end_date)])),
             y=alt.Y("activity_count:Q", title="Antal aktiviteter"),
             color=alt.Color('distance_range:N', scale=alt.Scale(domain=list(_colors.keys()), range=list(_colors.values()))),
             tooltip=["dt_interval:O", "distance_range:N", "activity_count:Q"]
