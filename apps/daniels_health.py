@@ -49,7 +49,6 @@ def imports_and_global_funcs(logger, mo, running_locally):
     import sys
     from pyarrow import parquet as pq
     import requests
-    import pyodide
 
     def is_wasm() -> bool:
         return "pyodide" in sys.modules
@@ -64,6 +63,7 @@ def imports_and_global_funcs(logger, mo, running_locally):
     import wat
     ''')
     else:
+        import pyodide
         mo.output.append(mo.md('Kör som WASM'))
 
 
@@ -79,7 +79,7 @@ def imports_and_global_funcs(logger, mo, running_locally):
         c = await r.bytes()
         logger.info(f'Laddade ned {loc} med storleken {len(c)} bytes')
         return c
-    
+
 
     async def read_df(loc) -> pl.DataFrame:
         # Due to need workaround for remotely loading Parquete files - https://github.com/pola-rs/polars/issues/20876
@@ -327,7 +327,7 @@ def get_records_tempo(df_activity_tempo, is_wasm, mo, pl):
         _table = mo.ui.table(_df_with_times, page_size=5, show_column_summaries=False)
     else:
         _table = mo.plain(_df_with_times)
-    
+
     mo.output.append(mo.md('## Rekord hastighet för 6 km'))
     mo.output.append(_table)
 
@@ -344,7 +344,7 @@ def get_records_distance(current_garmin_data, is_wasm, mo, pl):
         _t = mo.ui.table(_longest_activities_df, show_column_summaries=False)
     else:
         _t = mo.plain(_longest_activities_df)
-    
+
     mo.output.append(_t)
     return
 
@@ -360,7 +360,7 @@ def explore_garmin_dataset(current_garmin_data, is_wasm, mo):
 
 @app.cell(hide_code=True)
 def get_walking_distance_from_apple_df(apple_df, interval_input, mo, pl):
-    mo.stop(apple_df.height == 0)
+    mo.stop(apple_df.height == 0 or not interval_input)
 
     walk_distance_df = apple_df.filter(pl.col('metric') == 'distancewalkingrunning').group_by(['dt', 'metric']).agg(pl.col('value').sum())
 
@@ -383,7 +383,7 @@ def get_run_distance_df_from_garmin(
     mo,
     pl,
 ):
-    mo.stop(current_garmin_data.height == 0)
+    mo.stop(current_garmin_data.height == 0 or not interval_input)
 
     run_distance_df = current_garmin_data.filter(pl.col('activityType.typeKey') == 'running').with_columns(pl.col('dt').dt.truncate(every=interval_input).alias('dt_')).with_columns(pl.col('dt_').dt.date().alias('dt_interval')).select('dt_interval', 'distance').group_by('dt_interval').agg(pl.col('distance').sum() / 1000).rename({'distance': 'value'}).with_columns(pl.lit('run').alias('type'))
     return (run_distance_df,)
@@ -624,7 +624,7 @@ async def display_apple_df(
 
 @app.cell(hide_code=True)
 def get_weight_fat_df_from_apple_df(apple_df, interval_input, mo, pl):
-    mo.stop(apple_df.height == 0)
+    mo.stop(apple_df.height == 0 or not interval_input)
 
     weight_fat_df = apple_df.filter(pl.col('metric').is_in(['bodymass', 'bodyfatpercentage'])).pivot('metric', index='dt', values='value', aggregate_function='mean').with_columns(pl.col('dt').dt.truncate(every=interval_input).alias('dt_interval')).group_by('dt_interval').agg(pl.mean(['bodymass', 'bodyfatpercentage']))
     return (weight_fat_df,)
