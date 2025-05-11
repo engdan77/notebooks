@@ -34,34 +34,39 @@ def check_if_locally():
     import marimo as mo
     from pathlib import Path
     running_locally = isinstance(mo.notebook_location(), Path)
-    return Path, mo, running_locally
+
+    def file_exists(loc) -> bool:
+        # Check if the Path (locally) or URLPath (remote) exists
+        if not running_locally:
+            return True  # Assume if run as WASM that file exists
+        return loc.exists()
+    return Path, file_exists, mo
 
 
 @app.cell(hide_code=True)
-def imports(running_locally):
+def imports(mo):
     import polars as pl
     import altair as alt
     import json
     import os
     import datetime
+    import sys
 
-    if running_locally:
-        print('Running in local model')
-        import dotenv
-        from tempfile import NamedTemporaryFile
-        from zipfile import ZipFile
-        from health import HealthData
-        import wat
-    return (
-        HealthData,
-        NamedTemporaryFile,
-        ZipFile,
-        alt,
-        datetime,
-        dotenv,
-        os,
-        pl,
-    )
+    def is_wasm() -> bool:
+        return "pyodide" in sys.modules
+
+    if not is_wasm():
+        mo.output.append(mo.md('Kör lokalt på dator'))
+        exec('''
+    import dotenv
+    from tempfile import NamedTemporaryFile
+    from zipfile import ZipFile
+    from health import HealthData
+    import wat
+    ''')
+    else:
+        mo.output.append(mo.md('Kör som WASM'))
+    return alt, datetime, os, pl
 
 
 @app.cell(hide_code=True)
@@ -105,6 +110,7 @@ def select_activity_for_pulse_zones_chart(activities_dist, mo):
 @app.cell(hide_code=True)
 def load_or_empty_current_garmin_data(
     end_date,
+    file_exists,
     garmin_file,
     mo,
     pl,
@@ -127,7 +133,7 @@ def load_or_empty_current_garmin_data(
         "secsInZone5",
     ]
 
-    if garmin_file.exists():
+    if file_exists(garmin_file):
         current_garmin_data = pl.read_parquet(garmin_file).filter(pl.col('dt').is_between(start_date, end_date))
     else:
         current_garmin_data = pl.DataFrame({k: [] for k in relevant_garmin_colums})
@@ -539,7 +545,7 @@ def explore_blood_pressure_df(
 
 
 @app.cell(hide_code=True)
-def display_apple_df(apple_file, end_date, mo, pl, start_date):
+def display_apple_df(apple_file, end_date, file_exists, mo, pl, start_date):
     relevant_apple_colums = [
       "metric",
       "unit",
@@ -548,7 +554,7 @@ def display_apple_df(apple_file, end_date, mo, pl, start_date):
       "dt"
     ]
 
-    if apple_file.exists():
+    if file_exists(apple_file):
         _df = pl.read_parquet(apple_file).filter(pl.col('dt').is_between(start_date, end_date))
     else:
         _df = pl.DataFrame({k: [] for k in relevant_apple_colums})
@@ -707,9 +713,9 @@ def get_garmin_raw_data(
 
 @app.cell(hide_code=True)
 def get_garmin_df_and_filter(
-    Path,
     datetime,
     dob,
+    file_exists,
     garmin_file,
     get_first_garmin_activity,
     get_raw_garmin_data,
@@ -825,7 +831,7 @@ def get_garmin_df_and_filter(
     cols = garmin_activities.columns
     garmin_activities = garmin_activities.select(["dt"] + [col for col in cols if col != "dt"]).sort(by="dt").filter(pl.col('distance') > 1000)
 
-    if Path(garmin_file).exists():
+    if file_exists(garmin_file):
         # existing_df = pl.read_ndjson(_fn, schema_overrides={"dt": pl.Datetime})
         logger.info(f'Loading existing Garmin {garmin_file} and updating with existing')
         existing_df = pl.read_parquet(garmin_file)
@@ -838,8 +844,8 @@ def get_garmin_df_and_filter(
 
 
 @app.cell(hide_code=True)
-def _(Path, garmin_file, mo, pl):
-    mo.stop(Path(garmin_file).exists() is False)
+def _(file_exists, garmin_file, mo, pl):
+    mo.stop(file_exists(garmin_file) is False)
 
     _df = pl.read_parquet(garmin_file)
     mo.output.append(_df)
@@ -907,6 +913,7 @@ def process_apple_health_data(
     ZipFile,
     apple_file,
     apple_health_upload,
+    file_exists,
     logger,
     mo,
     pl,
@@ -954,7 +961,7 @@ def process_apple_health_data(
         apple_data = open_apple_health_zip(apple_health_content)
 
     _df = pl.DataFrame(apple_data).with_columns(dt=pl.col('date').str.to_date())
-    if apple_file.exists():
+    if file_exists(apple_file):
         _existing_df = pl.read_parquet(apple_file)
         _all_apple_data = pl.concat([_existing_df, _df], how='align').unique()
     else:
@@ -966,9 +973,9 @@ def process_apple_health_data(
 
 
 @app.cell(hide_code=True)
-def count_apple_health_size(apple_file, mo, pl):
+def count_apple_health_size(apple_file, file_exists, mo, pl):
     _count = 0
-    if apple_file.exists():
+    if file_exists(apple_file):
         _df = pl.read_parquet(apple_file)
         _count = _df.height
     mo.md(f'Antal Apple Hälsa datapunkter tillänglig {_count}')
