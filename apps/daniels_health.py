@@ -14,7 +14,9 @@
 #     "pandas==2.2.3",
 #     "persist-cache==0.4.3",
 #     "polars[pyarrow]==1.27.1",
+#     "pyarrow==20.0.0",
 #     "python-dotenv==1.1.0",
+#     "requests==2.32.3",
 #     "sqlalchemy==2.0.40",
 #     "sqlglot==26.13.0",
 #     "vegafusion==2.0.2",
@@ -45,6 +47,8 @@ def imports_and_global_funcs(mo, running_locally):
     import os
     import datetime
     import sys
+    import pyarrow
+    import requests
 
     def is_wasm() -> bool:
         return "pyodide" in sys.modules
@@ -74,18 +78,16 @@ def imports_and_global_funcs(mo, running_locally):
         _df = None
         if not running_locally:
             mo.output.append(mo.md('Hämtar data från URL'))
-            import requests
-            import pyarrow.parquet as pq
             r = requests.get(loc, allow_redirects=True)
             r.raise_for_status()
             with open('data.parquet', 'wb') as f:
                 f.write(r.content)
-            table = pq.read_table('data.parquet')
+            table = pyarrow.parquet.read_table('data.parquet')
             _df = pl.from_arrow(table)
         else: 
             _df = pl.read_parquet(loc)
         return _df
-    return alt, datetime, file_exists, os, pl
+    return alt, datetime, file_exists, is_wasm, os, pl, read_df
 
 
 @app.cell(hide_code=True)
@@ -133,6 +135,7 @@ def load_or_empty_current_garmin_data(
     garmin_file,
     mo,
     pl,
+    read_df,
     start_date,
 ):
     relevant_garmin_colums = [
@@ -153,7 +156,8 @@ def load_or_empty_current_garmin_data(
     ]
 
     if file_exists(garmin_file):
-        current_garmin_data = pl.read_parquet(garmin_file).filter(pl.col('dt').is_between(start_date, end_date))
+        _df = read_df(garmin_file)
+        current_garmin_data = _df.filter(pl.col('dt').is_between(start_date, end_date))
     else:
         current_garmin_data = pl.DataFrame({k: [] for k in relevant_garmin_colums})
 
@@ -643,17 +647,23 @@ def get_garmin_credentials(dotenv, mo, os):
 
 @app.cell(hide_code=True)
 def get_garmin_raw_data(
+    Garmin,
+    cache,
     datetime,
     garmin_login_found,
     garmin_password,
     garmin_username,
+    is_wasm,
     logger,
     mo,
 ):
     mo.stop(not garmin_login_found, mo.md('Avaktar med att hämta Garmin data'))
 
-    from persist_cache import cache
+    if not is_wasm:
+        # Workaround ensure not attempt to micropip this while used as WASM
+        exec('''from persist_cache import cache
     from garminconnect import Garmin
+        ''')
 
     DateLike = str | datetime.date
 
@@ -722,7 +732,7 @@ def get_garmin_raw_data(
     # get_raw_garmin_data(username=username, password=password, dt=['2025-04-12', '2025-04-14'])
     dob_ = get_garmin_profile()['userData']['birthDate']
     dob = datetime.date.fromisoformat(dob_).year
-    return cache, dob, gc, get_raw_garmin_data
+    return dob, gc, get_raw_garmin_data
 
 
 @app.cell(hide_code=True)
@@ -737,6 +747,7 @@ def get_garmin_df_and_filter(
     logger,
     mo,
     pl,
+    read_df,
 ):
     garmin_activities =  pl.DataFrame()
 
@@ -848,7 +859,7 @@ def get_garmin_df_and_filter(
     if file_exists(garmin_file):
         # existing_df = pl.read_ndjson(_fn, schema_overrides={"dt": pl.Datetime})
         logger.info(f'Loading existing Garmin {garmin_file} and updating with existing')
-        existing_df = pl.read_parquet(garmin_file)
+        existing_df = read_df(garmin_file)
         all_garmin_data = pl.concat([existing_df, garmin_activities], how='align').unique()
     else:
         logger.info('Building empty Garmin {garmin_file}')
@@ -858,10 +869,10 @@ def get_garmin_df_and_filter(
 
 
 @app.cell(hide_code=True)
-def _(file_exists, garmin_file, mo, pl):
+def _(file_exists, garmin_file, mo, read_df):
     mo.stop(file_exists(garmin_file) is False)
 
-    _df = pl.read_parquet(garmin_file)
+    _df = read_df(garmin_file)
     mo.output.append(_df)
 
     # _sorted = _df.select('dt').sort(by='dt')
@@ -931,6 +942,7 @@ def process_apple_health_data(
     logger,
     mo,
     pl,
+    read_df,
 ):
     mo.stop(apple_health_upload.value is None, mo.md('Välj och ladda upp Apple Hälsa'))
     apple_health_content = apple_health_upload.value[0].contents
@@ -976,7 +988,7 @@ def process_apple_health_data(
 
     _df = pl.DataFrame(apple_data).with_columns(dt=pl.col('date').str.to_date())
     if file_exists(apple_file):
-        _existing_df = pl.read_parquet(apple_file)
+        _existing_df = read_df(apple_file)
         _all_apple_data = pl.concat([_existing_df, _df], how='align').unique()
     else:
         _all_apple_data = _df
@@ -987,10 +999,10 @@ def process_apple_health_data(
 
 
 @app.cell(hide_code=True)
-def count_apple_health_size(apple_file, file_exists, mo, pl):
+def count_apple_health_size(apple_file, file_exists, mo, read_df):
     _count = 0
     if file_exists(apple_file):
-        _df = pl.read_parquet(apple_file)
+        _df = read_df(apple_file)
         _count = _df.height
     mo.md(f'Antal Apple Hälsa datapunkter tillänglig {_count}')
     return
