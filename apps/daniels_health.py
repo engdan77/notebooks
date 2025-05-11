@@ -312,7 +312,7 @@ def chart_count_of_distances(activity_input, alt, current_garmin_data, pl):
 
 
 @app.cell(hide_code=True)
-def get_records_tempo(df_activity_tempo, mo, pl):
+def get_records_tempo(df_activity_tempo, is_wasm, mo, pl):
     def float_to_minutes_seconds(minutes_float):
         # Extract minutes
         minutes = int(minutes_float)
@@ -323,7 +323,11 @@ def get_records_tempo(df_activity_tempo, mo, pl):
 
     _df_with_times = df_activity_tempo.filter(pl.col('distance').is_between(5800, 6200)).with_columns(time=pl.col('mins_per_km').map_elements(float_to_minutes_seconds, return_dtype=pl.String).alias('tempo')).sort(by='mins_per_km', descending=False).select('dt', 'time').rename({'dt': 'Datum', 'time': 'Tempo (min/km)'})
 
-    _table = mo.ui.table(_df_with_times, page_size=5, show_column_summaries=False)
+    if not is_wasm():
+        _table = mo.ui.table(_df_with_times, page_size=5, show_column_summaries=False)
+    else:
+        _table = mo.plain(_df_with_times)
+    
     mo.output.append(mo.md('## Rekord hastighet för 6 km'))
     mo.output.append(_table)
 
@@ -331,17 +335,26 @@ def get_records_tempo(df_activity_tempo, mo, pl):
 
 
 @app.cell(hide_code=True)
-def get_records_distance(current_garmin_data, mo, pl):
+def get_records_distance(current_garmin_data, is_wasm, mo, pl):
     _longest_activities_df = current_garmin_data.select('dt', 'distance', 'activityType.typeKey', (pl.col('distance') / 1000).round().alias('km')).sort(by='distance', descending=True).rename({'activityType.typeKey': 'Aktivitet', 'dt': 'Datum'}).select('Datum', 'km', 'Aktivitet')
 
     mo.output.append(mo.md('## Rekord distanser för period'))
-    mo.output.append(mo.ui.table(_longest_activities_df, show_column_summaries=False))
+
+    if not is_wasm():
+        _t = mo.ui.table(_longest_activities_df, show_column_summaries=False)
+    else:
+        _t = mo.plain(_longest_activities_df)
+    
+    mo.output.append(_t)
     return
 
 
 @app.cell(hide_code=True)
-def explore_garmin_dataset(current_garmin_data, mo):
-    mo.ui.dataframe(current_garmin_data, page_size=10)
+def explore_garmin_dataset(current_garmin_data, is_wasm, mo):
+    if is_wasm():
+        mo.plain(current_garmin_data)
+    else:
+        mo.ui.dataframe(current_garmin_data, page_size=10)
     return
 
 
@@ -570,7 +583,16 @@ def explore_blood_pressure_df(
 
 
 @app.cell(hide_code=True)
-def display_apple_df(apple_file, end_date, file_exists, mo, pl, start_date):
+async def display_apple_df(
+    apple_file,
+    end_date,
+    file_exists,
+    is_wasm,
+    mo,
+    pl,
+    read_df,
+    start_date,
+):
     relevant_apple_colums = [
       "metric",
       "unit",
@@ -580,7 +602,11 @@ def display_apple_df(apple_file, end_date, file_exists, mo, pl, start_date):
     ]
 
     if file_exists(apple_file):
-        _df = pl.read_parquet(apple_file).filter(pl.col('dt').is_between(start_date, end_date))
+        if is_wasm():
+            _df = await read_df(apple_file)
+            _df = _df.filter(pl.col('dt').is_between(start_date, end_date))
+        else:
+            _df = pl.read_parquet(apple_file).filter(pl.col('dt').is_between(start_date, end_date))
     else:
         _df = pl.DataFrame({k: [] for k in relevant_apple_colums})
 
@@ -589,7 +615,10 @@ def display_apple_df(apple_file, end_date, file_exists, mo, pl, start_date):
 
     # apple_df = pl.DataFrame(apple_data).with_columns(dt=pl.col('date').str.to_date())
     mo.output.append(mo.md(f'## Utforska all Apple Hälsa data'))
-    mo.output.append(mo.ui.dataframe(apple_df))
+    if not is_wasm():
+        mo.output.append(mo.ui.dataframe(apple_df))
+    else:
+        mo.output.append(mo.plain(apple_df))
     return (apple_df,)
 
 
@@ -627,8 +656,9 @@ def start_garmin_download(mo):
 
 
 @app.cell(hide_code=True)
-def get_garmin_credentials(dotenv, mo, os):
-    env_config = dotenv.load_dotenv('.env')
+def get_garmin_credentials(dotenv, is_wasm, mo, os):
+    if not is_wasm():
+        dotenv.load_dotenv('.env')
 
     _username = os.getenv('GARMIN_USERNAME', None)
     _password = os.getenv('GARMIN_PASSWORD', None)
