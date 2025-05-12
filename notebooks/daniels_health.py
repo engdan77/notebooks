@@ -96,6 +96,45 @@ def imports_and_global_funcs(logger, mo, running_locally):
 
 
 @app.cell(hide_code=True)
+def define_relevant_columns(mo):
+    relevant_apple_colums = [
+      "dt",
+      "metric",
+      "unit",
+      "value", 
+    ]
+
+    relevant_garmin_colums = [
+        "dt",
+        "activityId",
+        "startTimeLocal",
+        "distance",
+        "duration",
+        "calories",
+        "steps",
+        "activityType.typeKey",
+        "activityName",
+        "secsInZone1",
+        "secsInZone2",
+        "secsInZone3",
+        "secsInZone4",
+        "secsInZone5",
+    ]
+
+    def padded(l: list, by: int):
+        _x = [''] * by
+        for i, item in enumerate(l):
+            _x[i] = item
+        return _x
+    
+
+    relevant_columns_dict = {'Garmin': relevant_garmin_colums, 'Apple': padded(relevant_apple_colums, by=len(relevant_garmin_colums))}
+    mo.output.append(mo.md('### Kolumner som används för data'))
+    mo.output.append(mo.ui.table(relevant_columns_dict, page_size=30))
+    return relevant_apple_colums, relevant_garmin_colums
+
+
+@app.cell(hide_code=True)
 def define_global_vars(mo):
     garmin_file = mo.notebook_location() / 'public' / 'all_health_garmin.parquet'
     mo.output.append(mo.md(f'Garmin fil att använda `{garmin_file}`'))
@@ -141,32 +180,19 @@ async def load_or_empty_current_garmin_data(
     mo,
     pl,
     read_df,
+    relevant_garmin_colums,
     start_date,
 ):
-    relevant_garmin_colums = [
-        "dt",
-        "activityId",
-        "startTimeLocal",
-        "distance",
-        "duration",
-        "calories",
-        "steps",
-        "activityType.typeKey",
-        "activityName",
-        "secsInZone1",
-        "secsInZone2",
-        "secsInZone3",
-        "secsInZone4",
-        "secsInZone5",
-    ]
-
     if file_exists(garmin_file):
         _df = await read_df(garmin_file)
         current_garmin_data = _df.filter(pl.col('dt').is_between(start_date, end_date))
+        _sorted_df = _df.select('dt').sort(by='dt')['dt']
+        mo.output.append(f'Tillänglig Garmin data punkter finns för {_sorted_df.min():%Y-%m-%d} <-> {_sorted_df.max():%Y-%m-%d}')
     else:
         current_garmin_data = pl.DataFrame({k: [] for k in relevant_garmin_colums})
 
-    mo.md(f'Antal Garmin datapunkter {current_garmin_data.height} mellan {start_date} <-> {end_date}')
+    mo.output.append(mo.md(f'Antal Garmin datapunkter för vald period {current_garmin_data.height} mellan {start_date} <-> {end_date}'))
+
     return (current_garmin_data,)
 
 
@@ -586,7 +612,7 @@ def explore_blood_pressure_df(
 
 
 @app.cell(hide_code=True)
-async def display_apple_df(
+async def load_apple_df(
     apple_file,
     end_date,
     file_exists,
@@ -594,35 +620,35 @@ async def display_apple_df(
     mo,
     pl,
     read_df,
+    relevant_apple_colums,
     start_date,
 ):
-    relevant_apple_colums = [
-      "metric",
-      "unit",
-      "value",
-      "date",
-      "dt"
-    ]
-
     if file_exists(apple_file):
         if is_wasm():
-            _df = await read_df(apple_file)
-            _df = _df.filter(pl.col('dt').is_between(start_date, end_date))
+            _all_apple = await read_df(apple_file)
         else:
-            _df = pl.read_parquet(apple_file).filter(pl.col('dt').is_between(start_date, end_date))
+            _all_apple = pl.read_parquet(apple_file)
+        
+        _df = _all_apple.filter(pl.col('dt').is_between(start_date, end_date))
+        _dt = _all_apple.select('dt').sort(by='dt')['dt']
+        mo.output.append(mo.md(f'All Apple Hälsa data finns för perioden {_dt.min():%Y-%m-%d} <-> {_dt.max():%Y-%m-%d}'))
     else:
         _df = pl.DataFrame({k: [] for k in relevant_apple_colums})
 
     apple_df = _df
-    mo.md(f'Antal Apple datapunkter {apple_df.height} mellan {start_date} <-> {end_date}')
+    mo.output.append(mo.md(f'Antal Apple datapunkter för vald period {apple_df.height} mellan {start_date} <-> {end_date}'))
+    return (apple_df,)
 
+
+@app.cell(hide_code=True)
+def display_apple_df(apple_df, is_wasm, mo):
     # apple_df = pl.DataFrame(apple_data).with_columns(dt=pl.col('date').str.to_date())
     mo.output.append(mo.md(f'## Utforska all Apple Hälsa data'))
     if not is_wasm():
         mo.output.append(mo.ui.dataframe(apple_df))
     else:
         mo.output.append(mo.plain(apple_df))
-    return (apple_df,)
+    return
 
 
 @app.cell(hide_code=True)
