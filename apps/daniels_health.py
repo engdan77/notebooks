@@ -125,7 +125,7 @@ def define_relevant_columns(mo):
         for i, item in enumerate(l):
             _x[i] = item
         return _x
-    
+
 
     relevant_columns_dict = {'Garmin': relevant_garmin_colums, 'Apple': padded(relevant_apple_colums, by=len(relevant_garmin_colums))}
     mo.output.append(mo.md('### Kolumner som används för data'))
@@ -169,6 +169,13 @@ def select_activity_for_pulse_zones_chart(activities_dist, mo):
     activity_type_form = _form_text.batch(activity_input=mo.ui.dropdown(activity_types))
     activity_type_form
     return (activity_type_form,)
+
+
+@app.cell
+def set_month_text(interval_categories, interval_input, mo):
+    mo.stop(interval_input is None)
+    month_text = [k for k, v in interval_categories.items() if v == interval_input].pop()
+    return (month_text,)
 
 
 @app.cell(hide_code=True)
@@ -455,9 +462,9 @@ def get_median_pulse_zones_chart(
     alt,
     current_garmin_data,
     end_date,
-    interval_categories,
     interval_input,
     mo,
+    month_text,
     pl,
     start_date,
     to_alt_dt,
@@ -467,7 +474,7 @@ def get_median_pulse_zones_chart(
     activity_input = activity_type_form.value['activity_input']
     # interval_input = graph_form['interval_input'].value
 
-    month_text = [k for k, v in interval_categories.items() if v == interval_input].pop()
+    # month_text = [k for k, v in interval_categories.items() if v == interval_input].pop()
 
     interval_median_zones = (current_garmin_data.filter(pl.col('activityType.typeKey').eq(activity_input))
         .with_columns([
@@ -506,7 +513,7 @@ def get_median_pulse_zones_chart(
         width=600,
         height=300,
     )
-    return activity_input, interval_median_zones_chart, month_text
+    return activity_input, interval_median_zones_chart
 
 
 @app.cell(hide_code=True)
@@ -525,6 +532,28 @@ def get_df_for_median_tempo(
 
     chart_data_mins_per_km = df_activity_tempo.with_columns(pl.col('dt').dt.truncate(interval_input).alias('dt_interval')).group_by('dt_interval').agg(pl.col('mins_per_km').median().alias('mean_mins_per_km'))
     return chart_data_mins_per_km, df_activity_tempo
+
+
+@app.cell
+def _(current_garmin_data, pl):
+    fastest_6km_runs = current_garmin_data.filter((pl.col('activityType.typeKey') == 'running') & (pl.col('distance').is_between(5800, 6200))).select((pl.col('duration') / 60).round().alias('Minuter'), pl.col('dt').dt.date().alias('datum')).sort(by='Minuter', descending=False).limit(10)
+
+    longest_running_distances = current_garmin_data.filter(pl.col('activityType.typeKey') == 'running').sort(by='distance', descending=True).select((pl.col('distance') / 1000).round(1).alias('km'), pl.col('dt').dt.date().alias('datum')).limit(10)
+    return fastest_6km_runs, longest_running_distances
+
+
+@app.cell
+def _(fastest_6km_runs, longest_running_distances, mo):
+    mo.output.append(mo.md('### Längsta löpningen 🥇'))
+    mo.output.append(mo.plain(longest_running_distances))
+    mo.output.append(mo.md('### Snabbast 6km löpningen 🥇'))
+    mo.output.append(mo.plain(fastest_6km_runs))
+    return
+
+
+@app.cell
+def _():
+    return
 
 
 @app.cell(column=1, hide_code=True)
@@ -553,7 +582,6 @@ def display_blood_pressure_chart(
 
 @app.cell(hide_code=True)
 def display_weight_fat_plot(
-    activity_type_form,
     alt,
     end_date,
     mo,
@@ -563,7 +591,7 @@ def display_weight_fat_plot(
     to_alt_dt,
     weight_fat_df,
 ):
-    mo.stop(any(_ is None for _ in activity_type_form.value.values()) is True)
+    mo.stop(None in [start_date, end_date])
 
     mo.output.append(mo.md(f'##Vikt och fett% snitt per {month_text}'))
 
@@ -591,14 +619,14 @@ def display_weight_fat_plot(
 
 @app.cell(hide_code=True)
 def explore_blood_pressure_df(
-    activity_type_form,
     blood_pressure_data_grouped,
     interval_input,
     mo,
     month_text,
     pl,
 ):
-    mo.stop(any(_ is None for _ in activity_type_form.value.values()) is True)
+    # mo.stop(any(_ is None for _ in activity_type_form.value.values()) is True)
+    mo.stop(interval_input is None)
 
     mo.output.append(mo.md(f'### Utforska blodtrycket för perioden med snitt per {month_text}'))
 
@@ -627,7 +655,7 @@ async def load_apple_df(
             _all_apple = await read_df(apple_file)
         else:
             _all_apple = pl.read_parquet(apple_file)
-        
+
         _df = _all_apple.filter(pl.col('dt').is_between(start_date, end_date))
         _dt = _all_apple.select('dt').sort(by='dt')['dt']
         mo.output.append(mo.md(f'All Apple Hälsa data finns för perioden {_dt.min():%Y-%m-%d} <-> {_dt.max():%Y-%m-%d}'))
