@@ -3,7 +3,6 @@
 # dependencies = [
 #     "altair==5.5.0",
 #     "apple-health==2.0.0",
-#     "health==1.4",
 #     "marimo",
 #     "polars==1.29.0",
 #     "pyarrow==20.0.0",
