@@ -618,6 +618,16 @@ def display_weight_fat_plot(
 
 
 @app.cell(hide_code=True)
+def _(blood_pressure_agg, mo, pl):
+    mo.output.append(mo.md('### Högsta mätningar av blodtryck 🩸'))
+    mo.output.append(mo.plain(blood_pressure_agg.select(pl.col('dt_interval').alias('datum'), pl.col('bloodpressuresystolic').round(1), pl.col('bloodpressurediastolic').round(1)).sort(by='bloodpressurediastolic', descending=True).limit(5)))
+
+    mo.output.append(mo.md('### Lägsta mätningar av blodtryck 🩸'))
+    mo.output.append(mo.plain(blood_pressure_agg.select(pl.col('dt_interval').alias('datum'), pl.col('bloodpressuresystolic').round(1), pl.col('bloodpressurediastolic').round(1)).sort(by='bloodpressurediastolic', descending=False).limit(5)))
+    return
+
+
+@app.cell(hide_code=True)
 def explore_blood_pressure_df(
     blood_pressure_data_grouped,
     interval_input,
