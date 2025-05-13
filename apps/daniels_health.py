@@ -744,7 +744,7 @@ def group_blood_pressure_exclude_duplicates(
 
 @app.cell(column=2, hide_code=True)
 def start_garmin_download(is_wasm, mo):
-    mo.stop(is_wasm is True, "Inaktiverar Garmin Connect inladdning när vi kör WASM")
+    mo.stop(is_wasm() is True, mo.md("Inaktiverar Garmin Connect inladdning när vi kör WASM"))
     mo.output.append(mo.md('## Ladda in Garmin aktiviteter från API'))
     input_run_garmin_import = mo.ui.run_button(label='Starta')
     mo.output.append(input_run_garmin_import)
@@ -753,6 +753,8 @@ def start_garmin_download(is_wasm, mo):
 
 @app.cell(hide_code=True)
 def get_garmin_credentials(dotenv, is_wasm, mo, os):
+    mo.stop(is_wasm() is True, mo.md("Inaktiverar Garmin Connect inladdning när vi kör WASM"))
+
     if not is_wasm():
         dotenv.load_dotenv('.env')
 
@@ -1057,7 +1059,7 @@ def get_first_garmin_activity(cache, datetime, gc, logger, mo):
 
 @app.cell(column=3, hide_code=True)
 def upload_apple_health(is_wasm, mo):
-    mo.stop(is_wasm is True, "Inaktiverar Apple Hälsa inladdning när vi kör WASM")
+    mo.stop(is_wasm() is True, mo.md("Inaktiverar Apple Hälsa inladdning när vi kör WASM"))
     mo.output.append('Ladda in Apple Hälsa data')
     apple_health_upload = mo.ui.file().form()
     mo.output.append(apple_health_upload)
