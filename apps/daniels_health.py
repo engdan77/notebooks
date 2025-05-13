@@ -237,14 +237,11 @@ async def load_or_empty_current_garmin_data(
         all_garmin_df = _df
         current_garmin_data = _df.filter(pl.col('dt').is_between(start_date, end_date))
         _sorted_df = _df.select('dt').sort(by='dt')['dt']
-        mo.output.append(f'''Tillänglig Garmin data punkter finns för {_sorted_df.min():%Y-%m-%d} <-> {_sorted_df.max():%Y-%m-%d}''')
+        # mo.output.append(f'''Tillänglig Garmin data punkter finns för {_sorted_df.min():%Y-%m-%d} <-> {_sorted_df.max():%Y-%m-%d}''')
+        mo.output.append(mo.Html(f'''<u><b>Garmin data</b/></u>Period: {_sorted_df.min():%Y-%m-%d} - {_sorted_df.max():%Y-%m-%d}</br>''')) 
     else:
         current_garmin_data = pl.DataFrame({k: [] for k in relevant_garmin_colums})
         all_garmin_df = current_garmin_data
-
-    mo.output.append(mo.md(f'''Antal Garmin datapunkter för vald period {current_garmin_data.height} mellan 
-
-    {start_date} <-> {end_date}'''))
 
     return all_garmin_df, current_garmin_data
 
@@ -715,18 +712,12 @@ async def load_apple_df(
 
         _df = all_apple_df.filter(pl.col('dt').is_between(start_date, end_date))
         _dt = all_apple_df.select('dt').sort(by='dt')['dt']
-        mo.output.append(
-            mo.md(f'''All Apple Hälsa data finns för perioden 
-        
-            {_dt.min():%Y-%m-%d} <-> {_dt.max():%Y-%m-%d}'''))
+        mo.output.append(mo.Html(f'''<u><b>Apple Hälsa data</b/></u>Period: {_dt.min():%Y-%m-%d} - {_dt.max():%Y-%m-%d}</br>'''))
     else:
         _df = pl.DataFrame({k: [] for k in relevant_apple_colums})
         all_apple_df = _df
 
     apple_df = _df
-    mo.output.append(mo.md(f'''Antal Apple datapunkter för vald period {apple_df.height} mellan 
-
-    {start_date} <-> {end_date}'''))
     return all_apple_df, apple_df
 
 
