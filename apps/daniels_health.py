@@ -15,7 +15,10 @@
 import marimo
 
 __generated_with = "0.13.6"
-app = marimo.App(width="columns")
+app = marimo.App(
+    width="columns",
+    layout_file="layouts/daniels_health.grid.json",
+)
 
 
 @app.cell(column=0, hide_code=True)
@@ -562,7 +565,7 @@ def get_df_for_median_tempo(
     return chart_data_mins_per_km, df_activity_tempo
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(current_garmin_data, pl):
     fastest_6km_runs = current_garmin_data.filter((pl.col('activityType.typeKey') == 'running') & (pl.col('distance').is_between(5800, 6200))).select((pl.col('duration') / 60).round().alias('Minuter'), pl.col('dt').dt.date().alias('datum')).sort(by='Minuter', descending=False).limit(10)
 
@@ -570,7 +573,7 @@ def _(current_garmin_data, pl):
     return fastest_6km_runs, longest_running_distances
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(fastest_6km_runs, longest_running_distances, mo):
     mo.output.append(mo.md('### Längsta löpningen 🥇'))
     mo.output.append(mo.plain(longest_running_distances))
