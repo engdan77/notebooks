@@ -25,7 +25,7 @@ app = marimo.App(
 def _(mo):
     mo.md(
         r"""
-    ### Daniels hälsostatistik 📈
+    ## Daniels hälsostatistik 📈
 
     Välj tidsperiod övriga detaljer för att få grafer och övrig information.
 
@@ -164,7 +164,7 @@ def form_for_display(mo):
     interval_categories = {'dag': '1d', 'vecka': '1w', 'månad': '1mo', 'år': '1y'}
 
     form = mo.md('''
-    ## Ange detaljer för statistik
+    ### Ange detaljer för statistik
 
     Mellan datum: {date_range}
 
