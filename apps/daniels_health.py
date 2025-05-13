@@ -171,7 +171,33 @@ def select_activity_for_pulse_zones_chart(activities_dist, mo):
     return (activity_type_form,)
 
 
-@app.cell
+@app.cell(hide_code=True)
+def get_data_periods_gantt(
+    all_apple_df,
+    all_garmin_df,
+    end_date,
+    mo,
+    start_date,
+):
+    _chosen_years = end_date.year - start_date.year
+    if not _chosen_years:
+        _chosen_years = 1
+    _apple_start = all_apple_df.select('dt')['dt'].min().year
+    _apple_years = all_apple_df.select('dt')['dt'].max().year - _apple_start
+    _garmin_start = all_garmin_df.select('dt')['dt'].min().year
+    _garmin_years = all_garmin_df.select('dt')['dt'].max().year - _garmin_start
+
+    _gantt = f'''gantt
+        title Data över år
+        Vald period: crit, {start_date.year}, {_chosen_years}y
+        Apple: {_apple_start}, {_apple_years}y
+        Garmin: {_garmin_start}, {_garmin_years}y
+        '''
+    mo.mermaid(_gantt)
+    return
+
+
+@app.cell(hide_code=True)
 def set_month_text(interval_categories, interval_input, mo):
     mo.stop(interval_input is None)
     month_text = [k for k, v in interval_categories.items() if v == interval_input].pop()
@@ -191,15 +217,17 @@ async def load_or_empty_current_garmin_data(
 ):
     if file_exists(garmin_file):
         _df = await read_df(garmin_file)
+        all_garmin_df = _df
         current_garmin_data = _df.filter(pl.col('dt').is_between(start_date, end_date))
         _sorted_df = _df.select('dt').sort(by='dt')['dt']
         mo.output.append(f'Tillänglig Garmin data punkter finns för {_sorted_df.min():%Y-%m-%d} <-> {_sorted_df.max():%Y-%m-%d}')
     else:
         current_garmin_data = pl.DataFrame({k: [] for k in relevant_garmin_colums})
+        all_garmin_df = current_garmin_data
 
     mo.output.append(mo.md(f'Antal Garmin datapunkter för vald period {current_garmin_data.height} mellan {start_date} <-> {end_date}'))
 
-    return (current_garmin_data,)
+    return all_garmin_df, current_garmin_data
 
 
 @app.cell(hide_code=True)
@@ -662,19 +690,20 @@ async def load_apple_df(
 ):
     if file_exists(apple_file):
         if is_wasm():
-            _all_apple = await read_df(apple_file)
+            all_apple_df = await read_df(apple_file)
         else:
-            _all_apple = pl.read_parquet(apple_file)
+            all_apple_df = pl.read_parquet(apple_file)
 
-        _df = _all_apple.filter(pl.col('dt').is_between(start_date, end_date))
-        _dt = _all_apple.select('dt').sort(by='dt')['dt']
+        _df = all_apple_df.filter(pl.col('dt').is_between(start_date, end_date))
+        _dt = all_apple_df.select('dt').sort(by='dt')['dt']
         mo.output.append(mo.md(f'All Apple Hälsa data finns för perioden {_dt.min():%Y-%m-%d} <-> {_dt.max():%Y-%m-%d}'))
     else:
         _df = pl.DataFrame({k: [] for k in relevant_apple_colums})
+        all_apple_df = _df
 
     apple_df = _df
     mo.output.append(mo.md(f'Antal Apple datapunkter för vald period {apple_df.height} mellan {start_date} <-> {end_date}'))
-    return (apple_df,)
+    return all_apple_df, apple_df
 
 
 @app.cell(hide_code=True)
