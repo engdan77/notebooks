@@ -21,7 +21,21 @@ app = marimo.App(
 )
 
 
-@app.cell(column=0, hide_code=True)
+@app.cell(column=0)
+def _(mo):
+    mo.md(
+        r"""
+    ### Daniels hälsostatistik 📈
+
+    Välj tidsperiod övriga detaljer för att få grafer och övrig information.
+
+    För mer detaljer gå [hit](https://github.com/engdan77/notebooks) eller fler för utvecklade project besök [Daniel Github](https://github.com/engdan77).
+    """
+    )
+    return
+
+
+@app.cell(hide_code=True)
 def check_if_locally():
     import marimo as mo
     from pathlib import Path
@@ -223,12 +237,14 @@ async def load_or_empty_current_garmin_data(
         all_garmin_df = _df
         current_garmin_data = _df.filter(pl.col('dt').is_between(start_date, end_date))
         _sorted_df = _df.select('dt').sort(by='dt')['dt']
-        mo.output.append(f'Tillänglig Garmin data punkter finns för {_sorted_df.min():%Y-%m-%d} <-> {_sorted_df.max():%Y-%m-%d}')
+        mo.output.append(f'''Tillänglig Garmin data punkter finns för {_sorted_df.min():%Y-%m-%d} <-> {_sorted_df.max():%Y-%m-%d}''')
     else:
         current_garmin_data = pl.DataFrame({k: [] for k in relevant_garmin_colums})
         all_garmin_df = current_garmin_data
 
-    mo.output.append(mo.md(f'Antal Garmin datapunkter för vald period {current_garmin_data.height} mellan {start_date} <-> {end_date}'))
+    mo.output.append(mo.md(f'''Antal Garmin datapunkter för vald period {current_garmin_data.height} mellan 
+
+    {start_date} <-> {end_date}'''))
 
     return all_garmin_df, current_garmin_data
 
@@ -699,13 +715,18 @@ async def load_apple_df(
 
         _df = all_apple_df.filter(pl.col('dt').is_between(start_date, end_date))
         _dt = all_apple_df.select('dt').sort(by='dt')['dt']
-        mo.output.append(mo.md(f'All Apple Hälsa data finns för perioden {_dt.min():%Y-%m-%d} <-> {_dt.max():%Y-%m-%d}'))
+        mo.output.append(
+            mo.md(f'''All Apple Hälsa data finns för perioden 
+        
+            {_dt.min():%Y-%m-%d} <-> {_dt.max():%Y-%m-%d}'''))
     else:
         _df = pl.DataFrame({k: [] for k in relevant_apple_colums})
         all_apple_df = _df
 
     apple_df = _df
-    mo.output.append(mo.md(f'Antal Apple datapunkter för vald period {apple_df.height} mellan {start_date} <-> {end_date}'))
+    mo.output.append(mo.md(f'''Antal Apple datapunkter för vald period {apple_df.height} mellan 
+
+    {start_date} <-> {end_date}'''))
     return all_apple_df, apple_df
 
 
