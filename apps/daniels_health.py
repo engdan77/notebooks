@@ -251,6 +251,8 @@ async def load_or_empty_current_garmin_data(
     end_date,
     file_exists,
     garmin_file,
+    is_mobile,
+    logger,
     mo,
     pl,
     read_df,
@@ -258,6 +260,12 @@ async def load_or_empty_current_garmin_data(
     start_date,
 ):
     if file_exists(garmin_file):
+        if is_mobile():
+            _m = 'Du kör från en mobil med begränsat minne, kör Chrome från dator.'
+            logger.warning(_m)
+            mo.stop(True, 'Du kör från en mobil med begränsat minne, kör Chrome från dator.')
+        else:
+            logger.info('You are running WASM from a computer browser')
         _df = await read_df(garmin_file)
         all_garmin_df = _df
         current_garmin_data = _df.filter(pl.col('dt').is_between(start_date, end_date))
@@ -733,13 +741,13 @@ async def load_apple_df(
 ):
     if file_exists(apple_file):
         if is_wasm():
-            all_apple_df = await read_df(apple_file)
             if is_mobile():
                 _m = 'Du kör från en mobil med begränsat minne, kör Chrome från dator.'
                 logger.warning(_m)
                 mo.stop(True, 'Du kör från en mobil med begränsat minne, kör Chrome från dator.')
             else:
                 logger.info('You are running WASM from a computer browser')
+            all_apple_df = await read_df(apple_file)
         else:
             all_apple_df = pl.read_parquet(apple_file)
 
