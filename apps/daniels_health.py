@@ -4,6 +4,7 @@
 #     "altair==5.5.0",
 #     "apple-health==2.0.0",
 #     "marimo",
+#     "openai==1.78.1",
 #     "polars==1.29.0",
 #     "pyarrow==20.0.0",
 #     "python-dotenv==1.1.0",
@@ -28,8 +29,10 @@ def _(mo):
     ## Daniels hälsostatistik 📈
 
     Välj tidsperiod övriga detaljer för att få grafer och övrig information.
+    För mer detaljer gå [hit](https://github.com/engdan77/notebooks) eller fler för utvecklade project besök [Daniels Github](https://github.com/engdan77).
 
-    För mer detaljer gå [hit](https://github.com/engdan77/notebooks) eller fler för utvecklade project besök [Daniel Github](https://github.com/engdan77).
+    💾 Källkod: [här](https://github.com/engdan77/notebooks/blob/main/apps/daniels_health.py)
+    ✉️ E-post: [daniel@engvalls.eu](mailto:daniel@engvalls.eu) 
     """
     )
     return
@@ -52,7 +55,15 @@ def imports_and_global_funcs(logger, mo, running_locally):
     import datetime
     import sys
     from pyarrow import parquet as pq
-    import requests
+    import re
+
+
+    def is_mobile():
+        # Currently not working with WASM so skipping
+        _r = mo.app_meta().request
+        _h = _r.headers.headers['user-agent']
+        return bool(re.match('.*?Mobile|iP(hone|od|ad)|Android|BlackBerry|IEMobile.*', _h))
+
 
     def is_wasm() -> bool:
         return "pyodide" in sys.modules
@@ -160,8 +171,11 @@ def define_global_vars(mo):
 
 
 @app.cell(hide_code=True)
-def form_for_display(mo):
+def form_for_display(datetime, mo):
     interval_categories = {'dag': '1d', 'vecka': '1w', 'månad': '1mo', 'år': '1y'}
+
+    _start_date = datetime.date(datetime.date.today().year - 3, 1, 1)
+    _end_date = datetime.date.today()
 
     form = mo.md('''
     ### Ange detaljer för statistik
@@ -171,8 +185,8 @@ def form_for_display(mo):
     Gruppera per {interval_input}  ... (upplösning)
 
     ''').batch(
-        date_range=mo.ui.date_range(),
-        interval_input=mo.ui.dropdown(interval_categories)
+        date_range=mo.ui.date_range(value=(_start_date, _end_date)),
+        interval_input=mo.ui.dropdown(interval_categories, value='månad')
     )
 
     form
@@ -182,8 +196,9 @@ def form_for_display(mo):
 @app.cell(hide_code=True)
 def select_activity_for_pulse_zones_chart(activities_dist, mo):
     activity_types = activities_dist.select('activity').to_series().to_list()
+    _kwargs = {'value': 'running'} if 'running' in activity_types else {}
     _form_text = mo.md('Se aktiviteter av typ ... {activity_input} ...')
-    activity_type_form = _form_text.batch(activity_input=mo.ui.dropdown(activity_types))
+    activity_type_form = _form_text.batch(activity_input=mo.ui.dropdown(activity_types, **_kwargs))
     activity_type_form
     return (activity_type_form,)
 
@@ -238,7 +253,7 @@ async def load_or_empty_current_garmin_data(
         current_garmin_data = _df.filter(pl.col('dt').is_between(start_date, end_date))
         _sorted_df = _df.select('dt').sort(by='dt')['dt']
         # mo.output.append(f'''Tillänglig Garmin data punkter finns för {_sorted_df.min():%Y-%m-%d} <-> {_sorted_df.max():%Y-%m-%d}''')
-        mo.output.append(mo.Html(f'''<u><b>Garmin data</b/></u>Period: {_sorted_df.min():%Y-%m-%d} - {_sorted_df.max():%Y-%m-%d}</br>''')) 
+        mo.output.append(mo.Html(f'''<u><b>Garmin data</b/></u>Period: {_sorted_df.min():%Y-%m-%d} - {_sorted_df.max():%Y-%m-%d} [{all_garmin_df.height} rader]</br>''')) 
     else:
         current_garmin_data = pl.DataFrame({k: [] for k in relevant_garmin_colums})
         all_garmin_df = current_garmin_data
@@ -712,7 +727,7 @@ async def load_apple_df(
 
         _df = all_apple_df.filter(pl.col('dt').is_between(start_date, end_date))
         _dt = all_apple_df.select('dt').sort(by='dt')['dt']
-        mo.output.append(mo.Html(f'''<u><b>Apple Hälsa data</b/></u>Period: {_dt.min():%Y-%m-%d} - {_dt.max():%Y-%m-%d}</br>'''))
+        mo.output.append(mo.Html(f'''<u><b>Apple Hälsa data</b/></u>Period: {_dt.min():%Y-%m-%d} - {_dt.max():%Y-%m-%d} [{all_apple_df.height} rader]</br>'''))
     else:
         _df = pl.DataFrame({k: [] for k in relevant_apple_colums})
         all_apple_df = _df
