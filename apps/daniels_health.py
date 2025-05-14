@@ -22,7 +22,7 @@ app = marimo.App(
 )
 
 
-@app.cell(column=0)
+@app.cell(column=0, hide_code=True)
 def _(mo):
     mo.md(
         r"""
@@ -60,9 +60,9 @@ def imports_and_global_funcs(logger, mo, running_locally):
 
     def is_mobile():
         # Currently not working with WASM so skipping
-        _r = mo.app_meta().request
-        _h = _r.headers.headers['user-agent']
-        return bool(re.match('.*?Mobile|iP(hone|od|ad)|Android|BlackBerry|IEMobile.*', _h))
+        from pyodide.code import run_js
+        ug = run_js("navigator.userAgent")
+        return bool(re.match('.*?Mobile|iP(hone|od|ad)|Android|BlackBerry|IEMobile.*', ug))
 
 
     def is_wasm() -> bool:
@@ -119,7 +119,17 @@ def imports_and_global_funcs(logger, mo, running_locally):
         elif isinstance(dt, datetime.datetime):
             _dt = dt
         return alt.DateTime(year=_dt.year, month=_dt.month, date=_dt.day, hours=_dt.hour, minutes=_dt.minute)
-    return alt, datetime, file_exists, is_wasm, os, pl, read_df, to_alt_dt
+    return (
+        alt,
+        datetime,
+        file_exists,
+        is_mobile,
+        is_wasm,
+        os,
+        pl,
+        read_df,
+        to_alt_dt,
+    )
 
 
 @app.cell(hide_code=True)
@@ -712,7 +722,9 @@ async def load_apple_df(
     apple_file,
     end_date,
     file_exists,
+    is_mobile,
     is_wasm,
+    logger,
     mo,
     pl,
     read_df,
@@ -722,6 +734,12 @@ async def load_apple_df(
     if file_exists(apple_file):
         if is_wasm():
             all_apple_df = await read_df(apple_file)
+            if is_mobile():
+                _m = 'Du kör från en mobil med begränsat minne, kör Chrome från dator.'
+                logger.warning(_m)
+                mo.stop(True, 'Du kör från en mobil med begränsat minne, kör Chrome från dator.')
+            else:
+                logger.info('You are running WASM from a computer browser')
         else:
             all_apple_df = pl.read_parquet(apple_file)
 
