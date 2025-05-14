@@ -28,7 +28,8 @@ def _(mo):
         r"""
     ## Daniels hälsostatistik 📈
 
-    Välj tidsperiod övriga detaljer för att få grafer och övrig information.
+    Samlad data från olika källor (Garmin och Apple) med visuella grafer som jag finner mest värde.
+
     För mer detaljer gå [hit](https://github.com/engdan77/notebooks) eller fler för utvecklade project besök [Daniels Github](https://github.com/engdan77).
 
     💾 Källkod: [här](https://github.com/engdan77/notebooks/blob/main/apps/daniels_health.py)
