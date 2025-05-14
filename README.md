@@ -1,14 +1,24 @@
 # Notebooks
 
-This is a repository as placeholder for some of my *shareable* notebook.
+
+
+## 🙄 Daniels thoughts and reflections
+
+This is placeholder for my own shareable *scientific notebooks*, great oportunity to excersice the muscle memory 💪🏻 using *Python* tools such as [Polars](https://pola.rs/) - great for working with large datasets and [Altair](https://altair-viz.github.io/) for making nice visual representation of the data. And big thanks to [Marimo](https://marimo.io/) to glue everything together into a notebook including widgets allow the user to select and change the output. What also makes it awesome is that Marimo does allow one to use [WebAssembly](https://en.wikipedia.org/wiki/WebAssembly) (WASM) so that allow user to run the notebook entirely within the browser with no other needs than a static web page. 😍
+
+
 
 ## 📕 Current Notebooks
 
 ### Year 2025
 
-* Health Data
+* [Health Data](https://engdan77.github.io/notebooks/apps/daniels_health.html)
+  * This something I did develop before my annual doctors appointment allowing me to "share" my health data based on my custom view that I think I have best use of, and data collected across multiple sources such as [Garmin Connect](https://en.wikipedia.org/wiki/Garmin) - where my smartwatch uploads its data. And [Apple Health](https://en.wikipedia.org/wiki/Health_(Apple)) where my blood pressure meassures, weights are uploaded to.
 
 
+
+
+*..... original instructions from the Marimo project .....* 
 
 ## 🚀 Turn Marimo Notebooks into Github Pages
 
