@@ -32,7 +32,7 @@ def _(mo):
     För mer detaljer gå [hit](https://github.com/engdan77/notebooks) eller fler för utvecklade project besök [Daniels Github](https://github.com/engdan77).
 
     💾 Källkod: [här](https://github.com/engdan77/notebooks/blob/main/apps/daniels_health.py)
-    ✉️ E-post: [daniel@engvalls.eu](mailto:daniel@engvalls.eu) 
+    ✉️ E-post: [daniel@engvalls.eu](mailto:daniel@engvalls.eu)
     """
     )
     return
