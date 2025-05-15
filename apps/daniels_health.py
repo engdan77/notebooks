@@ -3,8 +3,10 @@
 # dependencies = [
 #     "altair==5.5.0",
 #     "apple-health==2.0.0",
+#     "garminconnect==0.2.26",
 #     "marimo",
 #     "openai==1.78.1",
+#     "persist-cache==0.4.4",
 #     "polars==1.29.0",
 #     "pyarrow==20.0.0",
 #     "python-dotenv==1.1.0",
@@ -846,21 +848,24 @@ def get_garmin_raw_data(
     cache,
     datetime,
     garmin_login_found,
-    garmin_password,
-    garmin_username,
     is_wasm,
     logger,
     mo,
 ):
     mo.stop(not garmin_login_found, mo.md('Avaktar med att hämta Garmin data'))
 
-    if not is_wasm:
+    if not is_wasm():
         # Workaround ensure not attempt to micropip this while used as WASM
         exec('''from persist_cache import cache
     from garminconnect import Garmin
         ''')
 
     DateLike = str | datetime.date
+
+    try:
+        garmin_username, garmin_password
+    except NameError:
+        garmin_username, garmin_password = garmin_login_found
 
     logger.debug('Logging in to Garmin')
     gc = Garmin(garmin_username, garmin_password)
@@ -927,7 +932,7 @@ def get_garmin_raw_data(
     # get_raw_garmin_data(username=username, password=password, dt=['2025-04-12', '2025-04-14'])
     dob_ = get_garmin_profile()['userData']['birthDate']
     dob = datetime.date.fromisoformat(dob_).year
-    return dob, gc, get_raw_garmin_data
+    return dob, garmin_password, garmin_username, gc, get_raw_garmin_data
 
 
 @app.cell(hide_code=True)
