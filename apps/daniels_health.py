@@ -1194,8 +1194,7 @@ async def process_apple_health_data(
     else:
         _all_apple_data = _df
 
-    _all_apple_data.write_parquet(apple_file)
-
+    _all_apple_data.sort(by='dt').write_parquet(apple_file)
     return
 
 
