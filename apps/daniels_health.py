@@ -15,7 +15,7 @@
 
 import marimo
 
-__generated_with = "0.13.6"
+__generated_with = "0.13.9"
 app = marimo.App(
     width="columns",
     layout_file="layouts/daniels_health.grid.json",
@@ -61,7 +61,10 @@ def imports_and_global_funcs(logger, mo, running_locally):
 
     def is_mobile():
         # Currently not working with WASM so skipping
-        from pyodide.code import run_js
+        try:
+            from pyodide.code import run_js
+        except ModuleNotFoundError:
+            return False
         ug = run_js("navigator.userAgent")
         return bool(re.match('.*?Mobile|iP(hone|od|ad)|Android|BlackBerry|IEMobile.*', ug))
 
