@@ -4,8 +4,10 @@
 #     "altair==5.5.0",
 #     "apple-health==2.0.0",
 #     "garminconnect==0.2.26",
+#     "lxml==5.4.0",
 #     "marimo",
 #     "openai==1.78.1",
+#     "pandas==2.2.3",
 #     "persist-cache==0.4.4",
 #     "polars==1.29.0",
 #     "pyarrow==20.0.0",
@@ -719,7 +721,7 @@ def explore_blood_pressure_df(
     pl,
 ):
     # mo.stop(any(_ is None for _ in activity_type_form.value.values()) is True)
-    mo.stop(interval_input is None)
+    mo.stop(interval_input is None or blood_pressure_data_grouped.height == 0, mo.md('Ingen data för period'))
 
     mo.output.append(mo.md(f'### Utforska blodtrycket för perioden med snitt per {month_text}'))
 
@@ -1205,6 +1207,66 @@ async def count_apple_health_size(apple_file, file_exists, mo, read_df):
         _df = await read_df(apple_file)
         _count = _df.height
     mo.md(f'Antal Apple Hälsa datapunkter tillänglig {_count}')
+    return
+
+
+@app.cell(column=4, hide_code=True)
+def funbeat_import_info(mo):
+    mo.md(r"""### Import av HTML (Funbeat) och uppdatera Garmin dataset med detta""")
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    funbeat_html_file = mo.ui.file_browser(label='Funbeat HTML fil', filetypes=['.htm', '.html']).form()
+    funbeat_html_file
+    return (funbeat_html_file,)
+
+
+@app.cell(hide_code=True)
+def funbeat_load_as_df(funbeat_html_file, mo, pl):
+    mo.stop(not funbeat_html_file.value)
+    import pandas as pd
+    funbeat_pd = pd.read_html(funbeat_html_file.value[0].path.as_posix()).pop()
+    funbeat_df = pl.from_pandas(funbeat_pd)
+    return (funbeat_df,)
+
+
+@app.cell(hide_code=True)
+def funbeat_adjust_to_garmin_df(funbeat_df, pl):
+    funbeat_df
+    funbeat_df_modified = funbeat_df.with_columns(
+        [
+            pl.col('Träningsform').map_elements(lambda x: {'Löpning': 'running', 'Promenad': 'walking'}.get(x), return_dtype=pl.String).alias("activityType.typeKey"),
+            (pl.col('Minuter') * 60 + pl.col('Sekunder')).alias('duration'),
+            (pl.col('Sträcka (km)') * 10).alias('distance'),
+            pl.col('Kcal').alias('calories'),
+            pl.col('Runda').alias('activityName'),
+            pl.col('Datum').str.to_datetime().alias('dt')
+        ]).filter((pl.col("activityType.typeKey").is_not_null() & pl.col('dt').le(pl.datetime(year=2014, month=10, day=1)))).select('dt', 'distance', 'duration', 'calories', 'activityType.typeKey').sort(by='dt')
+    return (funbeat_df_modified,)
+
+
+@app.cell(hide_code=True)
+def funbeat_df_merge_with_garmin(all_garmin_df, funbeat_df_modified, pl):
+    garmin_with_funbeat = pl.concat([all_garmin_df, funbeat_df_modified], how='diagonal').sort(by='dt').unique()
+    return (garmin_with_funbeat,)
+
+
+@app.cell(hide_code=True)
+def funbeat_filter_non_relevant_data(garmin_with_funbeat, pl):
+    garmin_with_funbeat_fix_dist = garmin_with_funbeat.with_columns(
+        pl.when((pl.col('dt').le(
+            pl.date(year=2015, month=1, day=1)) & pl.col.distance.le(900)))
+                .then(pl.col('distance') * 100)
+                .otherwise(pl.col('distance')).alias('distance')).filter((pl.col.distance.gt(100) & pl.col.duration.gt(10) & (pl.col.distance / pl.col.duration).le(10)))
+    garmin_with_funbeat_fix_dist
+    return (garmin_with_funbeat_fix_dist,)
+
+
+@app.cell
+def funbeat_save_to_garmin_file(garmin_file, garmin_with_funbeat_fix_dist):
+    garmin_with_funbeat_fix_dist.write_parquet(garmin_file)
     return
 
 
