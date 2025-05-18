@@ -374,7 +374,7 @@ def get_count_distances_chart(
             .otherwise(pl.lit(">10km")).alias("distance_range")
         )
         .group_by(["dt_interval", "distance_range"])
-        .agg(pl.count("activityId").alias("activity_count"))
+        .agg(pl.count("activityType.typeKey").alias("activity_count"))
     )
 
     # Create a stacked bar chart
@@ -623,7 +623,7 @@ def get_df_for_median_tempo(
 def _(current_garmin_data, pl):
     fastest_6km_runs = current_garmin_data.filter((pl.col('activityType.typeKey') == 'running') & (pl.col('distance').is_between(5800, 6200))).select((pl.col('duration') / 60).round().alias('Minuter'), pl.col('dt').dt.date().alias('datum')).sort(by='Minuter', descending=False).limit(10)
 
-    longest_running_distances = current_garmin_data.filter(pl.col('activityType.typeKey') == 'running').sort(by='distance', descending=True).select((pl.col('distance') / 1000).round(1).alias('km'), pl.col('dt').dt.date().alias('datum')).limit(10)
+    longest_running_distances = current_garmin_data.filter(pl.col('activityType.typeKey') == 'running').sort(by='distance', descending=True).select((pl.col('distance') / 1000).round(1).alias('km'), pl.duration(seconds=pl.col('duration')).alias('tid'), pl.col('dt').dt.date().alias('datum')).limit(10)
     return fastest_6km_runs, longest_running_distances
 
 
@@ -633,11 +633,6 @@ def _(fastest_6km_runs, longest_running_distances, mo):
     mo.output.append(mo.plain(longest_running_distances))
     mo.output.append(mo.md('### Snabbast 6km löpningen 🥇'))
     mo.output.append(mo.plain(fastest_6km_runs))
-    return
-
-
-@app.cell
-def _():
     return
 
 
