@@ -34,7 +34,7 @@ def _(mo):
 
     Samlad data från olika källor (Garmin och Apple) med visuella grafer som jag finner mest värde.
 
-    För mer detaljer gå [hit](https://github.com/engdan77/notebooks) eller för andra utvecklade project besök [Daniels Github](https://github.com/engdan77).
+    För mer detaljer gå [hit](https://github.com/engdan77/notebooks) eller för andra utvecklade projekt besök [Daniels Github](https://github.com/engdan77).
 
     💾 Källkod: [här](https://github.com/engdan77/notebooks/blob/main/apps/daniels_health.py)
     ✉️ E-post: [daniel@engvalls.eu](mailto:daniel@engvalls.eu)
