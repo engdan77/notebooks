@@ -19,7 +19,7 @@
 
 import marimo
 
-__generated_with = "0.13.9"
+__generated_with = "0.13.11"
 app = marimo.App(
     width="columns",
     layout_file="layouts/daniels_health.grid.json",
@@ -185,7 +185,9 @@ def define_global_vars(mo):
     mo.output.append(mo.md(f'Garmin fil att använda `{garmin_file}`'))
     apple_file = mo.notebook_location() / 'public' / 'apple_health.parquet'
     mo.output.append(mo.md(f'Apple Hälsa fil att använda `{apple_file}`'))
-    return apple_file, garmin_file
+    jefit_file = mo.notebook_location() / 'public' / 'jefit_health.parquet'
+    mo.output.append(mo.md(f'Jefit Hälsa fil att använda `{jefit_file}`'))
+    return apple_file, garmin_file, jefit_file
 
 
 @app.cell(hide_code=True)
@@ -801,7 +803,112 @@ def group_blood_pressure_exclude_duplicates(
     return (blood_pressure_data_grouped,)
 
 
-@app.cell(column=2, hide_code=True)
+@app.cell(column=2)
+async def read_jefit_df(file_exists, jefit_file, pl, read_df):
+    jefit_df = None
+    if file_exists(jefit_file):
+        jefit_df = await read_df(jefit_file)
+        jefit_df = jefit_df.sort(by='dt').select('dt', 'excercise', pl.col('rep_max').cast(pl.Float32), 'sets')
+    return (jefit_df,)
+
+
+@app.cell
+def _(jefit_df):
+    jefit_df.group_by('excercise').count()
+    return
+
+
+@app.cell
+def _():
+    exercises = [
+        'Barbell Bench Press',
+        'Barbell Squat',
+        'Barbell Deadlift',
+        'Barbell Preacher Curl'
+    ]
+    return (exercises,)
+
+
+@app.cell
+def _(jefit_df):
+    jefit_df
+    return
+
+
+@app.cell
+def _(jefit_df):
+    jefit_rep_max_df = jefit_df.pivot(on='excercise', index='dt', values='rep_max', aggregate_function='max')
+    jefit_rep_max_df
+    return (jefit_rep_max_df,)
+
+
+@app.cell
+def _(jefit_rep_max_df, pl):
+    jefit_max_excercise_df = jefit_rep_max_df.group_by_dynamic('dt', every='1mo').agg(pl.exclude('dt').max())
+    jefit_max_excercise_df
+    return
+
+
+@app.cell
+def _(exercises, jefit_df, pl):
+    jefit_max_rep_df = (
+        jefit_df.select(pl.col('dt')
+            .dt.truncate('1mo'), 'excercise', 'rep_max')
+            .group_by('dt', 'excercise')
+            .agg(pl.col('rep_max').max())
+            .sort(by='dt')
+            .filter(pl.col('excercise').is_in(exercises))
+    )
+    jefit_max_rep_df
+    return (jefit_max_rep_df,)
+
+
+@app.cell
+def _(alt, exercises, jefit_max_rep_df):
+    _chart = alt.Chart(jefit_max_rep_df).mark_bar(size=5).encode(
+        column=alt.Column('yearmonth(dt):O'),
+        x=alt.X('excercise', sort=exercises),
+        y=alt.Y('rep_max:Q').scale(zero=True, domain=[50, 100]),
+        color=alt.Color('excercise')
+    ).properties(
+        width=60,
+        height=120
+    )
+    _chart
+    return
+
+
+@app.cell
+def _(alt, jefit_max_rep_df, pl):
+    _benchpress_max_rep = jefit_max_rep_df.filter(pl.col('excercise') == 'Barbell Bench Press')['rep_max'].max()
+
+    _curl_max_rep = jefit_max_rep_df.filter(pl.col('excercise') == 'Barbell Preacher Curl')['rep_max'].max()
+
+    _max_benchpress = alt.Chart().mark_rule(color='red', strokeDash=[5, 5]).encode(
+        y=alt.datum(_benchpress_max_rep),
+        size=alt.value(1),
+    )
+
+    _max_curl = alt.Chart().mark_rule(color='orange', strokeDash=[5, 5]).encode(
+        y=alt.datum(_curl_max_rep),
+        size=alt.value(1),
+    )
+
+    _chart = alt.Chart(jefit_max_rep_df).mark_line(size=3).encode(
+        x=alt.X('yearmonth(dt):T'),
+        y=alt.Y('rep_max:Q').scale(domainMin=35),
+        color=alt.Color('excercise', scale=alt.Scale(range=['red', 'white', 'orange', 'yellow'])),
+    )
+    _chart + _max_benchpress + _max_curl
+    return
+
+
+@app.cell
+def _():
+    return
+
+
+@app.cell(column=3, hide_code=True)
 def start_garmin_download(is_wasm, mo):
     mo.stop(is_wasm() is True, mo.md("Inaktiverar Garmin Connect inladdning när vi kör WASM"))
     mo.output.append(mo.md('## Ladda in Garmin aktiviteter från API'))
@@ -1119,7 +1226,7 @@ def get_first_garmin_activity(cache, datetime, gc, logger, mo):
     return (get_first_garmin_activity,)
 
 
-@app.cell(column=3, hide_code=True)
+@app.cell(column=4, hide_code=True)
 def upload_apple_health(is_wasm, mo):
     mo.stop(is_wasm() is True, mo.md("Inaktiverar Apple Hälsa inladdning när vi kör WASM"))
     mo.output.append('Ladda in Apple Hälsa data')
@@ -1205,7 +1312,7 @@ async def count_apple_health_size(apple_file, file_exists, mo, read_df):
     return
 
 
-@app.cell(column=4, hide_code=True)
+@app.cell(column=5, hide_code=True)
 def funbeat_import_info(mo):
     mo.md(r"""### Import av HTML (Funbeat) och uppdatera Garmin dataset med detta""")
     return
@@ -1243,7 +1350,14 @@ def funbeat_adjust_to_garmin_df(funbeat_df, pl):
 
 
 @app.cell(hide_code=True)
-def funbeat_df_merge_with_garmin(all_garmin_df, funbeat_df_modified, pl):
+def funbeat_df_merge_with_garmin(
+    all_garmin_df,
+    funbeat_df_modified,
+    funbeat_html_file,
+    mo,
+    pl,
+):
+    mo.stop(not funbeat_html_file.value)
     garmin_with_funbeat = pl.concat([all_garmin_df, funbeat_df_modified], how='diagonal').sort(by='dt').unique()
     return (garmin_with_funbeat,)
 
@@ -1259,9 +1373,86 @@ def funbeat_filter_non_relevant_data(garmin_with_funbeat, pl):
     return (garmin_with_funbeat_fix_dist,)
 
 
-@app.cell
+@app.cell(hide_code=True)
 def funbeat_save_to_garmin_file(garmin_file, garmin_with_funbeat_fix_dist):
     garmin_with_funbeat_fix_dist.write_parquet(garmin_file)
+    return
+
+
+@app.cell(column=6, hide_code=True)
+def jefit_intro(mo):
+    mo.md(
+        r"""
+    ### Import av Jefit data
+
+    Ex. indata
+
+    ```json
+    [
+      {
+        "date": "2017-10-03",
+        "excercise": "Machine Reverse Flyes",
+        "rep_max": "45",
+        "sets": [
+          "60x12",
+          "60x12",
+          "60x12"
+        ]
+      },
+      {
+        "date": "2017-10-15",
+        "excercise": "Barbell Bench Press",
+        "rep_max": "81.67",
+        "sets": [
+          "70x5",
+          "60x8",
+          "60x8"
+        ]
+      },
+        ...
+    ]
+    ```
+    """
+    )
+    return
+
+
+@app.cell(hide_code=True)
+def jefit_select_file_import(mo):
+    jefit_import_file = mo.ui.file_browser(filetypes=['.json']).form()
+    jefit_import_file
+    return (jefit_import_file,)
+
+
+@app.cell(hide_code=True)
+def jefit_import_file(jefit_import_file, mo, pl):
+    mo.stop(jefit_import_file.value is None, mo.md('Välj en Jefit JSON file att ladda upp'))
+    jefit_raw_df = pl.read_json(jefit_import_file.value[0].path).with_columns(pl.col('date').str.to_date().alias('dt')).sort(by='dt')
+    return (jefit_raw_df,)
+
+
+@app.cell(hide_code=True)
+def jefit_merge_with_existing(
+    Path,
+    jefit_file,
+    jefit_import_file,
+    jefit_raw_df,
+    mo,
+    pl,
+):
+    mo.stop(jefit_import_file.value is None, mo.md('Välj en Jefit JSON file att ladda upp'))
+    if Path(jefit_file).exists():
+        current_jefit = pl.read_parquet(jefit_file)
+        merged_jefit = pl.concat([current_jefit, jefit_raw_df], how='diagonal').unique()
+        merged_jefit.write_parquet(jefit_file)
+    else:
+        jefit_raw_df.write_parquet(jefit_file)
+    return (merged_jefit,)
+
+
+@app.cell
+def jefit_display_imported(merged_jefit):
+    merged_jefit
     return
 
 
