@@ -639,6 +639,12 @@ def _(fastest_6km_runs, longest_running_distances, mo):
 
 
 @app.cell(column=1, hide_code=True)
+def _(mo):
+    mo.md(r"""## Generell hälso information""")
+    return
+
+
+@app.cell(hide_code=True)
 def display_blood_pressure_chart(
     alt,
     blood_pressure_agg,
@@ -803,7 +809,13 @@ def group_blood_pressure_exclude_duplicates(
     return (blood_pressure_data_grouped,)
 
 
-@app.cell(column=2)
+@app.cell(column=2, hide_code=True)
+def _(mo):
+    mo.md(r"""## Gym övningar""")
+    return
+
+
+@app.cell(hide_code=True)
 async def read_jefit_df(file_exists, jefit_file, pl, read_df):
     jefit_df = None
     if file_exists(jefit_file):
@@ -812,14 +824,17 @@ async def read_jefit_df(file_exists, jefit_file, pl, read_df):
     return (jefit_df,)
 
 
-@app.cell
-def _(jefit_df):
-    jefit_df.group_by('excercise').len().sort(by='len', descending=True)
+@app.cell(hide_code=True)
+def present_count_of_gym_excercises(jefit_df, mo):
+    mo.output.append(mo.md('### Antal övningar över hela perioden'))
+    mo.output.append(jefit_df.group_by('excercise').len().sort(by='len', descending=True).rename({'excercise': 'Övning', 'len': 'Antal'}))
     return
 
 
-@app.cell
-def _():
+@app.cell(hide_code=True)
+def define_excercises_for_graphs():
+    # Exercises to include in charts
+
     exercises = [
         'Barbell Bench Press',
         'Barbell Squat',
@@ -829,8 +844,10 @@ def _():
     return (exercises,)
 
 
-@app.cell
-def _(jefit_df, pl):
+@app.cell(hide_code=True)
+def gym_1rm_wide_form(jefit_df, pl):
+    # Wide form (not optimal for Altair)
+
     jefit_rep_max_df = jefit_df.pivot(on='excercise', index='dt', values='rep_max', aggregate_function='max')
 
     jefit_max_excercise_df = jefit_rep_max_df.group_by_dynamic('dt', every='1mo').agg(pl.exclude('dt').max())
@@ -838,8 +855,8 @@ def _(jefit_df, pl):
     return
 
 
-@app.cell
-def _(exercises, jefit_df, pl):
+@app.cell(hide_code=True)
+def get_1rm_gym_for_all_months(exercises, jefit_df, mo, pl):
     jefit_max_rep_df = (
         jefit_df.select(pl.col('dt')
             .dt.truncate('1mo'), 'excercise', 'rep_max')
@@ -848,27 +865,31 @@ def _(exercises, jefit_df, pl):
             .sort(by='dt')
             .filter(pl.col('excercise').is_in(exercises))
     )
-    jefit_max_rep_df
+
+    mo.output.append(mo.md('### Övningar 1RM'))
+    mo.output.append(jefit_max_rep_df)
     return (jefit_max_rep_df,)
 
 
 @app.cell(hide_code=True)
-def _(alt, exercises, jefit_max_rep_df):
+def get_bar_chart_1rm_gym_per_month(alt, exercises, jefit_max_rep_df, mo):
     _chart = alt.Chart(jefit_max_rep_df).mark_bar(size=5).encode(
         column=alt.Column('yearmonth(dt):O'),
-        x=alt.X('excercise', sort=exercises),
+        x=alt.X('excercise', title='Övning', sort=exercises),
         y=alt.Y('rep_max:Q').scale(zero=True, domain=[50, 100]),
         color=alt.Color('excercise')
     ).properties(
         width=60,
         height=120
     )
-    _chart
+
+    mo.output.append(mo.md('### Gym övningar 1RM per månad'))
+    mo.output.append(_chart)
     return
 
 
 @app.cell(hide_code=True)
-def _(alt, jefit_max_rep_df, mo, pl):
+def present_selectable_1rm_line_chart(alt, jefit_max_rep_df, mo, pl):
     # This defines a mouseover selection for points. fields=["dt"] allows Altair to identify other points with the same date. You will use this to create a vertical line highlight when a user hovers over a point.
     _hover = alt.selection_point(
         fields=["dt"],
@@ -876,7 +897,6 @@ def _(alt, jefit_max_rep_df, mo, pl):
         on="mouseover",
         empty="none",
     )
-
 
     _benchpress_max_rep = jefit_max_rep_df.filter(pl.col('excercise') == 'Barbell Bench Press')['rep_max'].max()
 
@@ -898,7 +918,7 @@ def _(alt, jefit_max_rep_df, mo, pl):
     jefit_chart = alt.Chart(jefit_max_rep_df).mark_line(size=3).encode(
         x=alt.X('yearmonth(dt):T'),
         y=alt.Y('rep_max:Q').scale(domainMin=35),
-        color=alt.Color('excercise', scale=alt.Scale(range=['red', 'white', 'orange', 'yellow'])),
+        color=alt.Color('excercise', title='Övning', scale=alt.Scale(range=['red', 'white', 'orange', 'yellow'])),
         tooltip=[
                 alt.Tooltip("dt", title="Datum"),
                 alt.Tooltip("rep_max", title="1RM"),
@@ -909,12 +929,15 @@ def _(alt, jefit_max_rep_df, mo, pl):
 
     # Use Marimo to select from ti
     selection = mo.ui.altair_chart(jefit_chart + _max_benchpress + _max_curl, chart_selection=False, legend_selection=False)
-    selection
+
+    mo.output.append(mo.md('### 1RM (max vikt för 1 rep) för gym övningar'))
+    mo.output.append(mo.md('Välj period för mer detaljer'))
+    mo.output.append(selection)
     return (selection,)
 
 
 @app.cell(hide_code=True)
-def _(datetime, mo, selection):
+def display_selected_1rm_period(datetime, mo, selection):
     jefit_start_ts = jefit_end_ts = 0
 
     def ts_to_iso(ts: int):
@@ -932,10 +955,18 @@ def _(datetime, mo, selection):
     return jefit_end_ts, jefit_start_ts, ts_to_iso
 
 
-@app.cell
-def _(jefit_df, jefit_end_ts, jefit_start_ts, mo, pl, ts_to_iso):
+@app.cell(hide_code=True)
+def display_detailed_table_selected_1rm_period(
+    jefit_df,
+    jefit_end_ts,
+    jefit_start_ts,
+    mo,
+    pl,
+    ts_to_iso,
+):
     mo.stop(jefit_start_ts == 0)
-    jefit_df.filter(pl.col('dt').is_between(ts_to_iso(jefit_start_ts), ts_to_iso(jefit_end_ts)))
+    mo.output.append(mo.md('### Vald gym period'))
+    mo.output.append(jefit_df.filter(pl.col('dt').is_between(ts_to_iso(jefit_start_ts), ts_to_iso(jefit_end_ts))))
     return
 
 
