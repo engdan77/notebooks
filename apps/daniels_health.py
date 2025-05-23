@@ -814,7 +814,7 @@ async def read_jefit_df(file_exists, jefit_file, pl, read_df):
 
 @app.cell
 def _(jefit_df):
-    jefit_df.group_by('excercise').count()
+    jefit_df.group_by('excercise').len().sort(by='len', descending=True)
     return
 
 
@@ -830,20 +830,9 @@ def _():
 
 
 @app.cell
-def _(jefit_df):
-    jefit_df
-    return
-
-
-@app.cell
-def _(jefit_df):
+def _(jefit_df, pl):
     jefit_rep_max_df = jefit_df.pivot(on='excercise', index='dt', values='rep_max', aggregate_function='max')
-    jefit_rep_max_df
-    return (jefit_rep_max_df,)
 
-
-@app.cell
-def _(jefit_rep_max_df, pl):
     jefit_max_excercise_df = jefit_rep_max_df.group_by_dynamic('dt', every='1mo').agg(pl.exclude('dt').max())
     jefit_max_excercise_df
     return
@@ -863,7 +852,7 @@ def _(exercises, jefit_df, pl):
     return (jefit_max_rep_df,)
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(alt, exercises, jefit_max_rep_df):
     _chart = alt.Chart(jefit_max_rep_df).mark_bar(size=5).encode(
         column=alt.Column('yearmonth(dt):O'),
@@ -878,8 +867,17 @@ def _(alt, exercises, jefit_max_rep_df):
     return
 
 
-@app.cell
-def _(alt, jefit_max_rep_df, pl):
+@app.cell(hide_code=True)
+def _(alt, jefit_max_rep_df, mo, pl):
+    # This defines a mouseover selection for points. fields=["dt"] allows Altair to identify other points with the same date. You will use this to create a vertical line highlight when a user hovers over a point.
+    _hover = alt.selection_point(
+        fields=["dt"],
+        nearest=True,
+        on="mouseover",
+        empty="none",
+    )
+
+
     _benchpress_max_rep = jefit_max_rep_df.filter(pl.col('excercise') == 'Barbell Bench Press')['rep_max'].max()
 
     _curl_max_rep = jefit_max_rep_df.filter(pl.col('excercise') == 'Barbell Preacher Curl')['rep_max'].max()
@@ -894,12 +892,50 @@ def _(alt, jefit_max_rep_df, pl):
         size=alt.value(1),
     )
 
-    _chart = alt.Chart(jefit_max_rep_df).mark_line(size=3).encode(
+    # Add selection feature and add as params
+    brush = alt.selection_interval(encodings=["x"])
+
+    jefit_chart = alt.Chart(jefit_max_rep_df).mark_line(size=3).encode(
         x=alt.X('yearmonth(dt):T'),
         y=alt.Y('rep_max:Q').scale(domainMin=35),
         color=alt.Color('excercise', scale=alt.Scale(range=['red', 'white', 'orange', 'yellow'])),
-    )
-    _chart + _max_benchpress + _max_curl
+        tooltip=[
+                alt.Tooltip("dt", title="Datum"),
+                alt.Tooltip("rep_max", title="1RM"),
+                alt.Tooltip("excercise", title="Övning"),
+            ]
+    ).add_params(_hover, brush)
+
+
+    # Use Marimo to select from ti
+    selection = mo.ui.altair_chart(jefit_chart + _max_benchpress + _max_curl, chart_selection=False, legend_selection=False)
+    selection
+    return (selection,)
+
+
+@app.cell(hide_code=True)
+def _(datetime, mo, selection):
+    jefit_start_ts = jefit_end_ts = 0
+
+    def ts_to_iso(ts: int):
+        return datetime.datetime.fromtimestamp(ts / 1000)
+
+    # Ugly way of extracting TS as "layered" does not currently work as expected in Marimo
+    try:
+        jefit_start_ts, jefit_end_ts = list(list(selection.selections.values()).pop().values()).pop()
+    except IndexError:
+        mo.output.append(mo.md('Välj från gym listan för resultat'))
+    else:
+        mo.output.append(mo.md(f'**Jefit från:** {ts_to_iso(jefit_start_ts)}'))
+        mo.output.append(mo.md(f'**Jefit till:** {ts_to_iso(jefit_end_ts)}'))
+
+    return jefit_end_ts, jefit_start_ts, ts_to_iso
+
+
+@app.cell
+def _(jefit_df, jefit_end_ts, jefit_start_ts, mo, pl, ts_to_iso):
+    mo.stop(jefit_start_ts == 0)
+    jefit_df.filter(pl.col('dt').is_between(ts_to_iso(jefit_start_ts), ts_to_iso(jefit_end_ts)))
     return
 
 
