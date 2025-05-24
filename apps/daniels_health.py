@@ -166,6 +166,13 @@ def define_relevant_columns(mo):
         "secsInZone5",
     ]
 
+    relevant_gym_columns = [
+        'dt',
+        'exercise',
+        'rep_max',
+        'sets'
+    ]
+
     def padded(l: list, by: int):
         _x = [''] * by
         for i, item in enumerate(l):
@@ -173,7 +180,9 @@ def define_relevant_columns(mo):
         return _x
 
 
-    relevant_columns_dict = {'Garmin': relevant_garmin_colums, 'Apple': padded(relevant_apple_colums, by=len(relevant_garmin_colums))}
+    relevant_columns_dict = {'Garmin': relevant_garmin_colums, 
+                             'Apple': padded(relevant_apple_colums, by=len(relevant_garmin_colums)), 
+                             'Gym': padded(relevant_gym_columns, by=len(relevant_garmin_colums))}
     mo.output.append(mo.md('### Kolumner som används för data'))
     mo.output.append(mo.ui.table(relevant_columns_dict, page_size=30))
     return relevant_apple_colums, relevant_garmin_colums
@@ -186,7 +195,7 @@ def define_global_vars(mo):
     apple_file = mo.notebook_location() / 'public' / 'apple_health.parquet'
     mo.output.append(mo.md(f'Apple Hälsa fil att använda `{apple_file}`'))
     jefit_file = mo.notebook_location() / 'public' / 'jefit_health.parquet'
-    mo.output.append(mo.md(f'Jefit Hälsa fil att använda `{jefit_file}`'))
+    mo.output.append(mo.md(f'Jefit (Gym) Hälsa fil att använda `{jefit_file}`'))
     return apple_file, garmin_file, jefit_file
 
 
@@ -228,6 +237,7 @@ def get_data_periods_gantt(
     all_apple_df,
     all_garmin_df,
     end_date,
+    jefit_df,
     mo,
     start_date,
 ):
@@ -238,12 +248,15 @@ def get_data_periods_gantt(
     _apple_years = all_apple_df.select('dt')['dt'].max().year - _apple_start
     _garmin_start = all_garmin_df.select('dt')['dt'].min().year
     _garmin_years = all_garmin_df.select('dt')['dt'].max().year - _garmin_start
+    _jefit_start = jefit_df.select('dt')['dt'].min().year
+    _jefit_years = jefit_df.select('dt')['dt'].max().year - _jefit_start
 
     _gantt = f'''gantt
         title Data över år
         Vald period: crit, {start_date.year}, {_chosen_years}y
         Apple: {_apple_start}, {_apple_years}y
         Garmin: {_garmin_start}, {_garmin_years}y
+        Gym: {_jefit_start}, {_jefit_years}y
         '''
     mo.mermaid(_gantt)
     return
@@ -384,7 +397,7 @@ def get_count_distances_chart(
         alt.Chart(_activity_counts)
         .mark_bar()
         .encode(
-            x=alt.X("dt_interval:T", title="Month", scale=alt.Scale(domain=[to_alt_dt(start_date), to_alt_dt(end_date)])),
+            x=alt.X("dt_interval:T", title="Tid", scale=alt.Scale(domain=[to_alt_dt(start_date), to_alt_dt(end_date)])),
             y=alt.Y("activity_count:Q", title="Antal aktiviteter"),
             color=alt.Color('distance_range:N', scale=alt.Scale(domain=list(_colors.keys()), range=list(_colors.values()))),
             tooltip=["dt_interval:O", "distance_range:N", "activity_count:Q"]
@@ -398,6 +411,64 @@ def get_count_distances_chart(
 
     chart_activity_distances.interactive()
 
+    return
+
+
+@app.cell
+def _(
+    alt,
+    current_garmin_data,
+    end_date,
+    interval_input,
+    jefit_df,
+    month_text,
+    pl,
+    start_date,
+    to_alt_dt,
+):
+    gym_count_agg_df = (
+        jefit_df.with_columns(pl.col('dt').dt.truncate('1d').alias('1d_interval'))
+            .group_by(pl.col('1d_interval'))
+            .agg()
+        .with_columns(pl.col('1d_interval').dt.truncate(interval_input).alias('dt_interval'))
+        .group_by('dt_interval').agg(pl.col('dt_interval').len().alias('count')).filter(pl.col('dt_interval').is_between(start_date, end_date))
+        .with_columns(pl.lit('gym').alias('category'))
+    )
+
+    running_count_agg_df = (
+        current_garmin_data.filter(pl.col('activityType.typeKey') == 'running').with_columns(pl.col('dt').dt.truncate('1d').alias('1d_interval'))
+            .group_by(pl.col('1d_interval'))
+            .agg()
+        .with_columns(pl.col('1d_interval').dt.truncate(interval_input).alias('dt_interval'))
+        .group_by('dt_interval').agg(pl.col('dt_interval').len().alias('count')).filter(pl.col('dt_interval').is_between(start_date, end_date))
+        .with_columns(pl.lit('running').alias('category'), pl.col('dt_interval').dt.date().alias('dt_interval'))
+    )
+
+    _joined_agg_df = pl.concat((gym_count_agg_df, running_count_agg_df))
+
+    chart_count_activities = (
+        alt.Chart(_joined_agg_df).mark_bar()
+        .encode(
+            x=alt.X("dt_interval:T", title="Tid", scale=alt.Scale(domain=[to_alt_dt(start_date), to_alt_dt(end_date)])), 
+            y=alt.Y('count', title='Antal'),
+            color=alt.Color('category', title='Aktivitet', scale=alt.Scale(range=('red', 'yellow')))
+        )
+    ).properties(
+            title=f"Antal gånger aktiviteter utförts per {month_text}",
+            width=600,
+            height=200
+        )
+
+
+    # chart_count_gym_visits
+
+    chart_count_activities
+    return
+
+
+@app.cell
+def _(current_garmin_data):
+    current_garmin_data
     return
 
 
@@ -587,7 +658,7 @@ def get_median_pulse_zones_chart(
     interval_median_zones_chart = alt.Chart(interval_median_zones).transform_fold(
         ["median_zone1", "median_zone2", "median_zone3", "median_zone4", "median_zone5"],
         as_=['zone', 'median_time']
-    ).mark_bar().encode(
+    ).mark_bar(size=5).encode(
         x=alt.X('yearmonth(dt_interval):T', title='Månad', scale=alt.Scale(domain=[to_alt_dt(start_date), to_alt_dt(end_date)])),
         y=alt.Y('median_time:Q', title='Median tid i minuter'),
         color=alt.Color('zone:N', scale=alt.Scale(
@@ -821,6 +892,8 @@ async def read_jefit_df(file_exists, jefit_file, pl, read_df):
     if file_exists(jefit_file):
         jefit_df = await read_df(jefit_file)
         jefit_df = jefit_df.sort(by='dt').select('dt', 'excercise', pl.col('rep_max').cast(pl.Float32), 'sets')
+    else:
+        jefit_df = pl.DataFrame({'dt': [], 'excercise': [], 'rep_max': [], 'sets': []}, schema={'dt': pl.datetime, 'excercise': pl.String, 'rep_max': pl.Float32, 'sets': pl.List})
     return (jefit_df,)
 
 
