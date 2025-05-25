@@ -1031,12 +1031,21 @@ def display_detailed_table_selected_1rm_period(
     except IndexError:
         mo.output.append(mo.md('Välj från gym listan för resultat'))
     else:
-        mo.output.append(mo.md(f'**Jefit från:** {ts_to_iso(jefit_start_ts)}'))
-        mo.output.append(mo.md(f'**Jefit till:** {ts_to_iso(jefit_end_ts)}'))
+        mo.output.append(mo.md(f'**Gym period vald:** {ts_to_iso(jefit_start_ts):%Y-%m-%d} - {ts_to_iso(jefit_end_ts):%Y-%m-%d}'))
 
     mo.stop(jefit_start_ts == 0, mo.md('Välj en gym period'))
     mo.output.append(mo.md('### Vald gym period'))
     mo.output.append(jefit_df.filter(pl.col('dt').is_between(ts_to_iso(jefit_start_ts), ts_to_iso(jefit_end_ts))))
+    return
+
+
+@app.cell
+def _(jefit_df, mo, pl):
+    for e in ('Barbell Bench Press', 'Barbell Squat'):
+        mo.output.append(mo.md(f'### 💪🏻🎖️ Max vikt för {e}'))
+        max_excercise_rep= jefit_df.filter(pl.col('excercise') == e).sort(by='rep_max', descending=True).limit(n=5)
+        mo.output.append(max_excercise_rep)
+    
     return
 
 
