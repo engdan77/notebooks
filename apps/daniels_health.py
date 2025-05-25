@@ -313,18 +313,6 @@ def get_activities_as_chart(current_garmin_data, pl):
     return (activities_dist,)
 
 
-@app.cell
-def _(activities_dist):
-    activities_dist
-    return
-
-
-@app.cell
-def _(gym_count_agg_df):
-    gym_count_agg_df
-    return
-
-
 @app.cell(hide_code=True)
 def get_chart_zones_and_temp(
     activity_type_form,
@@ -476,7 +464,7 @@ def count_gym_vs_running(
         )
 
     chart_count_activities
-    return (gym_count_agg_df,)
+    return
 
 
 @app.cell(hide_code=True)
@@ -708,7 +696,7 @@ def _(current_garmin_data, pl):
 
 
 @app.cell(hide_code=True)
-def _(fastest_6km_runs, longest_running_distances, mo):
+def display_gym_records(fastest_6km_runs, longest_running_distances, mo):
     mo.output.append(mo.md('### Längsta löpningen 🥇'))
     mo.output.append(mo.plain(longest_running_distances))
     mo.output.append(mo.md('### Snabbast 6km löpningen 🥇'))
@@ -784,7 +772,7 @@ def display_weight_fat_plot(
 
 
 @app.cell(hide_code=True)
-def _(blood_pressure_agg, mo, pl):
+def display_blood_pressure_records(blood_pressure_agg, mo, pl):
     mo.output.append(mo.md('### Högsta mätningar av blodtryck 🩸'))
     mo.output.append(mo.plain(blood_pressure_agg.select(pl.col('dt_interval').alias('datum'), pl.col('bloodpressuresystolic').round(1), pl.col('bloodpressurediastolic').round(1)).sort(by='bloodpressurediastolic', descending=True).limit(5)))
 
@@ -1047,7 +1035,7 @@ def display_detailed_table_selected_1rm_period(
 
 
 @app.cell(hide_code=True)
-def _(jefit_df, mo, pl):
+def display_gym_records_list(jefit_df, mo, pl):
     for e in ('Barbell Bench Press', 'Barbell Squat'):
         mo.output.append(mo.md(f'### 💪🏻🎖️ Max vikt för {e}'))
         max_excercise_rep= jefit_df.filter(pl.col('excercise') == e).sort(by='rep_max', descending=True).limit(n=5)
@@ -1326,18 +1314,16 @@ async def get_garmin_df_and_filter(
 
 
 @app.cell(hide_code=True)
-async def _(file_exists, garmin_file, mo, read_df):
+async def display_garmin_df_if_it_exists(
+    file_exists,
+    garmin_file,
+    mo,
+    read_df,
+):
     mo.stop(file_exists(garmin_file) is False)
 
     _df = await read_df(garmin_file)
     mo.output.append(_df)
-
-    # _sorted = _df.select('dt').sort(by='dt')
-    # _as_list = _sorted.select(pl.col('dt'))['dt']
-    # _first, _last = _as_list.first(), _as_list.last()
-
-    # mo.output.append(mo.md(f'''Garmin data just nu lagrad för perioden {_first:%Y-%m-%d} <-> {_last:%Y-%m-%d}'''))
-
 
     return
 
@@ -1472,7 +1458,7 @@ def funbeat_import_info(mo):
 
 
 @app.cell(hide_code=True)
-def _(mo):
+def import_funbeat_html_file(mo):
     funbeat_html_file = mo.ui.file_browser(label='Funbeat HTML fil', filetypes=['.htm', '.html']).form()
     funbeat_html_file
     return (funbeat_html_file,)
