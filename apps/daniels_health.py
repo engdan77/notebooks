@@ -112,7 +112,11 @@ def imports_and_global_funcs(logger, mo, running_locally):
             c = await async_get(loc)
             with open('data.parquet', 'wb') as f:
                 f.write(c)
-            table = pq.read_table('data.parquet')
+            try:
+                table = pq.read_table('data.parquet')
+            except Exception:
+                logger.error(f'Unable to read downloaded parquet file {loc}')
+                return None
             _df = pl.from_arrow(table)
         else: 
             _df = pl.read_parquet(loc)
@@ -891,12 +895,13 @@ def _(mo):
 
 @app.cell(hide_code=True)
 async def read_jefit_df(file_exists, jefit_file, pl, read_df):
-    jefit_df = None
+    # Create empty and attempt load
+    jefit_df = pl.DataFrame({'dt': [], 'excercise': [], 'rep_max': [], 'sets': []}, schema={'dt': pl.datatypes.Datetime, 'excercise': pl.datatypes.String, 'rep_max': pl.datatypes.Float32, 'sets': pl.datatypes.List})
+
     if file_exists(jefit_file):
         jefit_df = await read_df(jefit_file)
-        jefit_df = jefit_df.sort(by='dt').select('dt', 'excercise', pl.col('rep_max').cast(pl.Float32), 'sets')
-    else:
-        jefit_df = pl.DataFrame({'dt': [], 'excercise': [], 'rep_max': [], 'sets': []}, schema={'dt': pl.datetime, 'excercise': pl.String, 'rep_max': pl.Float32, 'sets': pl.List})
+        if jefit_df is not None:
+            jefit_df = jefit_df.sort(by='dt').select('dt', 'excercise', pl.col('rep_max').cast(pl.Float32), 'sets')
     return (jefit_df,)
 
 
