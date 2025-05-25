@@ -894,7 +894,7 @@ def _(mo):
 
 
 @app.cell(hide_code=True)
-async def read_jefit_df(file_exists, jefit_file, pl, read_df):
+async def read_jefit_df(file_exists, jefit_file, mo, pl, read_df):
     # Create empty and attempt load
     jefit_df = pl.DataFrame({'dt': [], 'excercise': [], 'rep_max': [], 'sets': []}, schema={'dt': pl.datatypes.Datetime, 'excercise': pl.datatypes.String, 'rep_max': pl.datatypes.Float32, 'sets': pl.datatypes.List})
 
@@ -902,6 +902,8 @@ async def read_jefit_df(file_exists, jefit_file, pl, read_df):
         jefit_df = await read_df(jefit_file)
         if jefit_df is not None:
             jefit_df = jefit_df.sort(by='dt').select('dt', 'excercise', pl.col('rep_max').cast(pl.Float32), 'sets')
+        else:
+            mo.stop(True, mo.md('Unable to load Jefit Gym data'))
     return (jefit_df,)
 
 
