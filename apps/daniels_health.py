@@ -1366,7 +1366,7 @@ def get_first_garmin_activity(cache, datetime, gc, logger, mo):
 @app.cell(column=4, hide_code=True)
 def upload_apple_health(is_wasm, mo):
     mo.stop(is_wasm() is True, mo.md("Inaktiverar Apple Hälsa inladdning när vi kör WASM"))
-    mo.output.append('Ladda in Apple Hälsa data')
+    mo.output.append(mo.md('## Ladda in Apple Hälsa data'))
     apple_health_upload = mo.ui.file().form()
     mo.output.append(apple_health_upload)
     return (apple_health_upload,)
@@ -1520,7 +1520,7 @@ def funbeat_save_to_garmin_file(garmin_file, garmin_with_funbeat_fix_dist):
 def jefit_intro(mo):
     mo.md(
         r"""
-    ### Import av Jefit data
+    ### Import av Jefit (gym) data
 
     Ex. indata
 
