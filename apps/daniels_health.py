@@ -32,7 +32,7 @@ def _(mo):
         r"""
     ## Daniels hälsostatistik 📈
 
-    Samlad data från olika källor (Garmin och Apple) med visuella grafer som jag finner mest värde.
+    Samlad data från olika källor (Garmin, Apple och Jefit) med visuella grafer som jag finner mest värde.
 
     För mer detaljer gå [hit](https://github.com/engdan77/notebooks) eller för andra utvecklade projekt besök [Daniels Github](https://github.com/engdan77).
 
@@ -1039,7 +1039,7 @@ def display_detailed_table_selected_1rm_period(
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(jefit_df, mo, pl):
     for e in ('Barbell Bench Press', 'Barbell Squat'):
         mo.output.append(mo.md(f'### 💪🏻🎖️ Max vikt för {e}'))
@@ -1596,7 +1596,7 @@ def jefit_merge_with_existing(
     return (merged_jefit,)
 
 
-@app.cell
+@app.cell(hide_code=True)
 def jefit_display_imported(merged_jefit):
     merged_jefit
     return
