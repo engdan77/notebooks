@@ -309,6 +309,18 @@ def get_activities_as_chart(current_garmin_data, pl):
     return (activities_dist,)
 
 
+@app.cell
+def _(activities_dist):
+    activities_dist
+    return
+
+
+@app.cell
+def _(gym_count_agg_df):
+    gym_count_agg_df
+    return
+
+
 @app.cell(hide_code=True)
 def get_chart_zones_and_temp(
     activity_type_form,
@@ -414,8 +426,8 @@ def get_count_distances_chart(
     return
 
 
-@app.cell
-def _(
+@app.cell(hide_code=True)
+def count_gym_vs_running(
     alt,
     current_garmin_data,
     end_date,
@@ -459,17 +471,8 @@ def _(
             height=200
         )
 
-
-    # chart_count_gym_visits
-
     chart_count_activities
-    return
-
-
-@app.cell
-def _(current_garmin_data):
-    current_garmin_data
-    return
+    return (gym_count_agg_df,)
 
 
 @app.cell(hide_code=True)
@@ -1010,7 +1013,13 @@ def present_selectable_1rm_line_chart(alt, jefit_max_rep_df, mo, pl):
 
 
 @app.cell(hide_code=True)
-def display_selected_1rm_period(datetime, mo, selection):
+def display_detailed_table_selected_1rm_period(
+    datetime,
+    jefit_df,
+    mo,
+    pl,
+    selection,
+):
     jefit_start_ts = jefit_end_ts = 0
 
     def ts_to_iso(ts: int):
@@ -1025,19 +1034,7 @@ def display_selected_1rm_period(datetime, mo, selection):
         mo.output.append(mo.md(f'**Jefit från:** {ts_to_iso(jefit_start_ts)}'))
         mo.output.append(mo.md(f'**Jefit till:** {ts_to_iso(jefit_end_ts)}'))
 
-    return jefit_end_ts, jefit_start_ts, ts_to_iso
-
-
-@app.cell(hide_code=True)
-def display_detailed_table_selected_1rm_period(
-    jefit_df,
-    jefit_end_ts,
-    jefit_start_ts,
-    mo,
-    pl,
-    ts_to_iso,
-):
-    mo.stop(jefit_start_ts == 0)
+    mo.stop(jefit_start_ts == 0, mo.md('Välj en gym period'))
     mo.output.append(mo.md('### Vald gym period'))
     mo.output.append(jefit_df.filter(pl.col('dt').is_between(ts_to_iso(jefit_start_ts), ts_to_iso(jefit_end_ts))))
     return
