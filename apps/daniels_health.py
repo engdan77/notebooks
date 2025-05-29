@@ -1040,7 +1040,7 @@ def display_gym_records_list(jefit_df, mo, pl):
         mo.output.append(mo.md(f'### 💪🏻🎖️ Max vikt för {e}'))
         max_excercise_rep= jefit_df.filter(pl.col('excercise') == e).sort(by='rep_max', descending=True).limit(n=5)
         mo.output.append(max_excercise_rep)
-    
+
     return
 
 
@@ -1459,7 +1459,7 @@ def funbeat_import_info(mo):
 
 @app.cell(hide_code=True)
 def import_funbeat_html_file(mo):
-    funbeat_html_file = mo.ui.file_browser(label='Funbeat HTML fil', filetypes=['.htm', '.html']).form()
+    funbeat_html_file = mo.ui.file_browser(label='Funbeat HTML fil', filetypes=['.htm', '.html'], limit=300).form()
     funbeat_html_file
     return (funbeat_html_file,)
 
@@ -1522,7 +1522,7 @@ def funbeat_save_to_garmin_file(garmin_file, garmin_with_funbeat_fix_dist):
 def jefit_intro(mo):
     mo.md(
         r"""
-    ### Import av Jefit (gym) data
+    ### Import av Jefit (gym) data via JSON
 
     Ex. indata
 
@@ -1592,6 +1592,75 @@ def jefit_merge_with_existing(
 @app.cell(hide_code=True)
 def jefit_display_imported(merged_jefit):
     merged_jefit
+    return
+
+
+@app.cell(column=7)
+def display_info_jefit_csv(mo):
+    mo.md(r"""### Import av Jefit Export (gym) data via CSV""")
+    return
+
+
+@app.cell(hide_code=True)
+def select_jefit_csv_import(mo):
+    jefit_csv_input_file = mo.ui.file_browser(filetypes=['.csv'], limit=300).form()
+    jefit_csv_input_file
+    return (jefit_csv_input_file,)
+
+
+@app.cell(hide_code=True)
+def import_jefit_csv(jefit_csv_input_file, mo, pl):
+    mo.stop(jefit_csv_input_file.value is None, mo.md('Välj en fil att importera'))
+    lines_to_process = []
+
+    f = open(jefit_csv_input_file.value[0].path)
+    while line := next(f):
+        if 'EXERCISE LOGS' in line:
+            break
+
+    next(f)  # Skip one line
+
+    while line := next(f):
+        if line.startswith('#') or len(line) <= 2:
+            break
+        lines_to_process.append(line)
+    f.close()
+
+    _jefit_raw_data = ''.join(lines_to_process)
+
+    _jefit_df = pl.read_csv(_jefit_raw_data.encode())
+
+    df_imported_jefit = (
+        _jefit_df.with_columns(
+        pl.col('mydate').str.to_date().alias('dt'),
+        pl.col('ename').alias('excercise'),
+        pl.col('record').alias('rep_max').cast(dtype=pl.Float32),
+        pl.col('logs').str.split(',').alias('sets')
+        )
+        .select(['dt', 'excercise', 'rep_max', 'sets'])
+    )
+
+    df_imported_jefit
+    return (df_imported_jefit,)
+
+
+@app.cell(hide_code=True)
+def save_jefit_csv_to_file(
+    Path,
+    df_imported_jefit,
+    jefit_df,
+    jefit_file,
+    mo,
+    pl,
+):
+    _merged_jefit_with_imported_df = pl.concat([jefit_df, df_imported_jefit]).unique(['dt', 'excercise', 'rep_max'], keep='first').sort(by='dt', descending=False)
+    _merged_jefit_with_imported_df
+
+    if Path(jefit_file).exists():
+        _merged_jefit_with_imported_df.write_parquet(jefit_file)
+        mo.output.append(f'Sparade data till {jefit_file}')
+    else:
+        _merged_jefit_with_imported_df.write_parquet(jefit_file)
     return
 
 
