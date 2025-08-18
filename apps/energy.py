@@ -7,7 +7,6 @@
 #     "polars==1.32.2",
 #     "pyarrow==21.0.0",
 #     "python-dotenv==1.1.1",
-#     "energylens@https://github.com/engdan77/energylens.git",
 # ]
 # ///
 
