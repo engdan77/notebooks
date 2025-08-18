@@ -26,7 +26,7 @@ def _(mo):
 
 
 @app.cell(hide_code=True)
-def _(logger):
+def _():
     import marimo as mo
     import polars as pl
     import altair as alt
@@ -37,10 +37,13 @@ def _(logger):
     from pyarrow import parquet as pq
     import re
     from pathlib import Path
+    import logging
 
     running_locally = isinstance(mo.notebook_location(), Path)
     energy_file = mo.notebook_location() / 'public' / 'energy_invoice_data.parquet'
 
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger('energy')
 
     def is_mobile():
         # Currently not working with WASM so skipping
