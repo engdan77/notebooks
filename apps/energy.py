@@ -59,8 +59,7 @@ app._unparsable_cell(
         import base64
         mo.output.append(mo.md('Kör lokalt på dator'))
         # Workaround to avoid have Marimo tro to install packages in WASM mode
-        install_packages = base64.b64decode(b'CmltcG9ydCBkb3RlbnYKZnJvbSB0ZW1wZmlsZSBpbXBvcnQgTmFtZWRUZW1wb3JhcnlGaWxlCmZyb20gemlwZmlsZSBpbXBvcnQgWmlwRm
-    lsZQppbXBvcnQgZW5lcmd5bGVucwo=').decode()
+        install_packages = base64.b64decode(b'CmltcG9ydCBkb3RlbnYKZnJvbSB0ZW1wZmlsZSBpbXBvcnQgTmFtZWRUZW1wb3JhcnlGaWxlCmZyb20gemlwZmlsZSBpbXBvcnQgWmlwRmlsZQppbXBvcnQgZW5lcmd5bGVucwo=').decode()
         exec(install_packages)
     else:
         import pyodide
