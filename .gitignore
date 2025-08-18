@@ -185,3 +185,6 @@ tests/
 
 # Exclude persistent cache
 .persist_cache/
+
+# My backups
+*.tgz
