@@ -6,7 +6,6 @@
 #     "openai==1.99.6",
 #     "polars==1.32.2",
 #     "pyarrow==21.0.0",
-#     "python-dotenv==1.1.1",
 # ]
 # ///
 
@@ -26,8 +25,8 @@ def _(mo):
     return
 
 
-@app.cell(hide_code=True)
-def _(logger):
+app._unparsable_cell(
+    r"""
     import marimo as mo
     import polars as pl
     import altair as alt
@@ -49,21 +48,20 @@ def _(logger):
             from pyodide.code import run_js
         except ModuleNotFoundError:
             return False
-        ug = run_js("navigator.userAgent")
+        ug = run_js(\"navigator.userAgent\")
         return bool(re.match('.*?Mobile|iP(hone|od|ad)|Android|BlackBerry|IEMobile.*', ug))
 
 
     def is_wasm() -> bool:
-        return "pyodide" in sys.modules
+        return \"pyodide\" in sys.modules
 
     if not is_wasm():
+        import base64
         mo.output.append(mo.md('Kör lokalt på dator'))
-        exec('''
-    import dotenv
-    from tempfile import NamedTemporaryFile
-    from zipfile import ZipFile
-    import wat
-    ''')
+        # Workaround to avoid have Marimo tro to install packages in WASM mode
+        install_packages = base64.b64decode(b'CmltcG9ydCBkb3RlbnYKZnJvbSB0ZW1wZmlsZSBpbXBvcnQgTmFtZWRUZW1wb3JhcnlGaWxlCmZyb20gemlwZmlsZSBpbXBvcnQgWmlwRm
+    lsZQppbXBvcnQgZW5lcmd5bGVucwo=').decode()
+        exec(install_packages)
     else:
         import pyodide
         mo.output.append(mo.md('Kör som WASM'))
@@ -110,7 +108,9 @@ def _(logger):
         elif isinstance(dt, datetime.datetime):
             _dt = dt
         return alt.DateTime(year=_dt.year, month=_dt.month, date=_dt.day, hours=_dt.hour, minutes=_dt.minute)
-    return Path, alt, datetime, energy_file, is_wasm, mo, pl, read_df
+    """,
+    column=None, disabled=False, hide_code=True, name="_"
+)
 
 
 @app.cell(hide_code=True)
@@ -468,10 +468,9 @@ async def _(
     pl,
 ):
     mo.stop(new_data_params.value is None, mo.md('Ange antal månader'))
-    import energylens
+    # import energylens
     import asyncio
     current_df = df1
-    # new_df = energylens.get_last_invoices(count=new_data_params.value['month_count'])
     new_df_bytes = await energylens.async_get_last_invoices(count=new_data_params.value['month_count'])
     df_import = add_extra_columns_and_format_dt(pl.read_parquet(new_df))
     updated_df = pl.concat([df3, df_import], how='diagonal').unique()
