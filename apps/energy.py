@@ -25,8 +25,8 @@ def _(mo):
     return
 
 
-app._unparsable_cell(
-    r"""
+@app.cell(hide_code=True)
+def _(logger):
     import marimo as mo
     import polars as pl
     import altair as alt
@@ -48,12 +48,12 @@ app._unparsable_cell(
             from pyodide.code import run_js
         except ModuleNotFoundError:
             return False
-        ug = run_js(\"navigator.userAgent\")
+        ug = run_js("navigator.userAgent")
         return bool(re.match('.*?Mobile|iP(hone|od|ad)|Android|BlackBerry|IEMobile.*', ug))
 
 
     def is_wasm() -> bool:
-        return \"pyodide\" in sys.modules
+        return "pyodide" in sys.modules
 
     if not is_wasm():
         import base64
@@ -107,9 +107,7 @@ app._unparsable_cell(
         elif isinstance(dt, datetime.datetime):
             _dt = dt
         return alt.DateTime(year=_dt.year, month=_dt.month, date=_dt.day, hours=_dt.hour, minutes=_dt.minute)
-    """,
-    column=None, disabled=False, hide_code=True, name="_"
-)
+    return Path, alt, datetime, energy_file, is_wasm, mo, pl, read_df
 
 
 @app.cell(hide_code=True)
@@ -432,7 +430,7 @@ def _(mo):
 
     Detta fungerar enbart om du kör Marimo lokalt på din dator, kommer be dig att logga in till din personliga Jönköping Energi portal med BankID.
     ```sh
-    marimo edit energy.py --sandbox --headless --port 8081 --no-token
+    uvx --with https://github.com/engdan77/energylens.git marimo edit energy.py --headless --port 8081 --no-token
     ```
     """
     )
@@ -461,6 +459,7 @@ async def _(
     df1,
     df3,
     energy_file,
+    energylens,
     mo,
     new_data_params,
     new_df,
