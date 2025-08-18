@@ -12,8 +12,11 @@ This is placeholder for my own shareable *scientific notebooks*, great oportunit
 
 ### Year 2025
 
-* [Health Data](https://engdan77.github.io/notebooks/apps/daniels_health.html)
-  * This something I did develop before my annual doctors appointment allowing me to "share" my health data based on my custom view that I think I have best use of, and data collected across multiple sources such as [Garmin Connect](https://en.wikipedia.org/wiki/Garmin) - where my smartwatch uploads its data. And [Apple Health](https://en.wikipedia.org/wiki/Health_(Apple)) where my blood pressure meassures, weights are uploaded to.
+* **[Health Data](https://engdan77.github.io/notebooks/apps/daniels_health.html)**
+  * This something I did develop before my annual doctors appointment allowing me to "share" my health data based on my custom view that I think I have best use of, and data collected across multiple sources such as [Garmin Connect](https://en.wikipedia.org/wiki/Garmin) - where my smartwatch uploads its data. And [Apple Health](https://en.wikipedia.org/wiki/Health_(Apple)) where my blood pressure meassures, weights are uploaded to. 🩺
+* **[Energy consumption](https://engdan77.github.io/notebooks/apps/energy.html)**
+  * As I found good reasons to do more in-depth analysis of our house energy consumption and costs involved so I made this notebook with charts to help more easily do this in the future. Click [here](https://engdan77.github.io/notebooks/apps/energy.html) to take part of this. ⚡️
+
 
 
 
