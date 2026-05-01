@@ -1,17 +1,19 @@
 # /// script
 # requires-python = ">=3.12"
 # dependencies = [
-#     "altair==5.5.0",
+#     "altair",
 #     "marimo",
 #     "openai==1.99.6",
 #     "polars==1.32.2",
-#     "pyarrow==21.0.0",
+#     "pyarrow",
+#     "dotenv",
+#     "energylens @ git+https://github.com/engdan77/energylens"
 # ]
 # ///
 
 import marimo
 
-__generated_with = "0.14.17"
+__generated_with = "0.17.0"
 app = marimo.App(
     width="columns",
     app_title="Energi kalkyl",
@@ -416,7 +418,6 @@ def _(datetime, df3_with_dates, mo, pl):
     average_cost_month = round(df3_with_dates.filter(pl.col('month') == this_month)['Total kostnad'].mean())
     mo.md(f'''Denna månad beräknas kosta runt **{average_cost_month} kr**
     ''')
-
     return
 
 
@@ -462,18 +463,16 @@ async def _(
     df1,
     df3,
     energy_file,
-    energylens,
     mo,
     new_data_params,
-    new_df,
     pl,
 ):
     mo.stop(new_data_params.value is None, mo.md('Ange antal månader'))
-    # import energylens
+    import energylens
     import asyncio
     current_df = df1
     new_df_bytes = await energylens.async_get_last_invoices(count=new_data_params.value['month_count'])
-    df_import = add_extra_columns_and_format_dt(pl.read_parquet(new_df))
+    df_import = add_extra_columns_and_format_dt(pl.read_parquet(new_df_bytes))
     updated_df = pl.concat([df3, df_import], how='diagonal').unique()
     updated_df.write_parquet(energy_file.as_posix())
     mo.md(f'Uppdaterade {energy_file.as_posix()} [{Path(energy_file).stat().st_size:_} bytes]')
