@@ -19,7 +19,7 @@
 
 import marimo
 
-__generated_with = "0.13.11"
+__generated_with = "0.14.17"
 app = marimo.App(
     width="columns",
     layout_file="layouts/daniels_health.grid.json",
@@ -1058,7 +1058,7 @@ def start_garmin_download(is_wasm, mo):
     return (input_run_garmin_import,)
 
 
-@app.cell(hide_code=True)
+@app.cell
 def get_garmin_credentials(dotenv, is_wasm, mo, os):
     mo.stop(is_wasm() is True, mo.md("Inaktiverar Garmin Connect inladdning när vi kör WASM"))
 
