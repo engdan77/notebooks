@@ -3,7 +3,7 @@
 # dependencies = [
 #     "altair==5.5.0",
 #     "apple-health==2.0.0",
-#     "garminconnect==0.2.26",
+#     "garminconnect==0.3.3",
 #     "lxml==5.4.0",
 #     "marimo",
 #     "openai==1.78.1",
@@ -19,7 +19,7 @@
 
 import marimo
 
-__generated_with = "0.14.17"
+__generated_with = "0.23.4"
 app = marimo.App(
     width="columns",
     layout_file="layouts/daniels_health.grid.json",
@@ -28,8 +28,7 @@ app = marimo.App(
 
 @app.cell(column=0, hide_code=True)
 def _(mo):
-    mo.md(
-        r"""
+    mo.md(r"""
     ## Daniels hälsostatistik 📈
 
     Samlad data från olika källor (Garmin, Apple och Jefit) med visuella grafer som jag finner mest värde.
@@ -38,8 +37,7 @@ def _(mo):
 
     💾 Källkod: [här](https://github.com/engdan77/notebooks/blob/main/apps/daniels_health.py)
     ✉️ E-post: [daniel@engvalls.eu](mailto:daniel@engvalls.eu)
-    """
-    )
+    """)
     return
 
 
@@ -131,6 +129,7 @@ def imports_and_global_funcs(logger, mo, running_locally):
         elif isinstance(dt, datetime.datetime):
             _dt = dt
         return alt.DateTime(year=_dt.year, month=_dt.month, date=_dt.day, hours=_dt.hour, minutes=_dt.minute)
+
     return (
         alt,
         datetime,
@@ -302,7 +301,6 @@ async def load_or_empty_current_garmin_data(
     else:
         current_garmin_data = pl.DataFrame({k: [] for k in relevant_garmin_colums})
         all_garmin_df = current_garmin_data
-
     return all_garmin_df, current_garmin_data
 
 
@@ -414,7 +412,6 @@ def get_count_distances_chart(
     )
 
     chart_activity_distances.interactive()
-
     return
 
 
@@ -492,8 +489,7 @@ def chart_count_of_distances(activity_input, alt, current_garmin_data, pl):
     df_distance_in_km_rounded = df_distance_in_km.with_columns(pl.col('distance_km').round())
     df_grouped_ = df_distance_in_km_rounded.group_by(pl.col('distance_km')).agg(pl.len().alias('count')).sort(by='distance_km')
 
-    alt.Chart(df_grouped_).mark_bar(size=20).encode(x=alt.X('distance_km:N', title='Kilometer'), y=alt.Y('count:Q', title='Antal')).properties(height=200, title='Antal aktiviteter grupperad på antal kilometer för perioden')
-
+    alt.Chart(df_grouped_).mark_bar(size=20).encode(x=alt.X('distance_km:N', title='Kilometer'), y=alt.Y('count:Q', title='Antal')).properties(height=200, title='Antal löprundor grupperade på längd i kilometer')
     return
 
 
@@ -516,7 +512,6 @@ def get_records_tempo(df_activity_tempo, is_wasm, mo, pl):
 
     mo.output.append(mo.md('## Rekord hastighet för 6 km'))
     mo.output.append(_table)
-
     return
 
 
@@ -605,7 +600,6 @@ def create_logger():
 
     # Add the handler to the logger
     logger.addHandler(ch)
-
     return (logger,)
 
 
@@ -687,7 +681,7 @@ def get_df_for_median_tempo(
     return chart_data_mins_per_km, df_activity_tempo
 
 
-@app.cell(hide_code=True)
+@app.cell
 def _(current_garmin_data, pl):
     fastest_6km_runs = current_garmin_data.filter((pl.col('activityType.typeKey') == 'running') & (pl.col('distance').is_between(5800, 6200))).select((pl.col('duration') / 60).round().alias('Minuter'), pl.col('dt').dt.date().alias('datum')).sort(by='Minuter', descending=False).limit(10)
 
@@ -695,18 +689,31 @@ def _(current_garmin_data, pl):
     return fastest_6km_runs, longest_running_distances
 
 
-@app.cell(hide_code=True)
-def display_gym_records(fastest_6km_runs, longest_running_distances, mo):
-    mo.output.append(mo.md('### Längsta löpningen 🥇'))
+@app.cell
+def display_gym_records(
+    end_date,
+    fastest_6km_runs,
+    longest_running_distances,
+    mo,
+    start_date,
+):
+    mo.output.append(mo.md(f'### Längsta löpningen {start_date.year} - {end_date.year} 🥇'))
     mo.output.append(mo.plain(longest_running_distances))
-    mo.output.append(mo.md('### Snabbast 6km löpningen 🥇'))
+    mo.output.append(mo.md(f'### Snabbast 6km löpningen {start_date.year} - {end_date.year} 🥇'))
     mo.output.append(mo.plain(fastest_6km_runs))
+    return
+
+
+@app.cell
+def _():
     return
 
 
 @app.cell(column=1, hide_code=True)
 def _(mo):
-    mo.md(r"""## Generell hälso information""")
+    mo.md(r"""
+    ## Generell hälso information
+    """)
     return
 
 
@@ -719,7 +726,7 @@ def display_blood_pressure_chart(
     start_date,
     to_alt_dt,
 ):
-    _base = alt.Chart(blood_pressure_agg).mark_line().encode(
+    _base = alt.Chart(blood_pressure_agg).mark_line(interpolate="monotone").encode(
         x=alt.X('dt_interval:T', title='Datum', scale=alt.Scale(domain=[to_alt_dt(start_date), to_alt_dt(end_date)])),
     ).properties(
         title=f'Medel blodtryck per {month_text}',
@@ -727,7 +734,7 @@ def display_blood_pressure_chart(
         height=300,
     )
 
-    _dia = _base.encode(y=alt.Y('bloodpressurediastolic:Q', title='Dia', scale=alt.Scale(domainMin=40)), color=alt.value('lightblue'))
+    _dia = _base.encode(y=alt.Y('bloodpressurediastolic:Q', title='Dia', scale=alt.Scale(domainMin=50)), color=alt.value('lightblue'))
     _sys = _base.encode(y=alt.Y('bloodpressuresystolic:Q', title='Sys'), color=alt.value('red'))
 
     _base + _dia + _sys
@@ -772,11 +779,17 @@ def display_weight_fat_plot(
 
 
 @app.cell(hide_code=True)
-def display_blood_pressure_records(blood_pressure_agg, mo, pl):
-    mo.output.append(mo.md('### Högsta mätningar av blodtryck 🩸'))
+def display_blood_pressure_records(
+    blood_pressure_agg,
+    end_date,
+    mo,
+    pl,
+    start_date,
+):
+    mo.output.append(mo.md(f'### Högsta mätningar av blodtryck {start_date.year} - {end_date.year} 🩸'))
     mo.output.append(mo.plain(blood_pressure_agg.select(pl.col('dt_interval').alias('datum'), pl.col('bloodpressuresystolic').round(1), pl.col('bloodpressurediastolic').round(1)).sort(by='bloodpressurediastolic', descending=True).limit(5)))
 
-    mo.output.append(mo.md('### Lägsta mätningar av blodtryck 🩸'))
+    mo.output.append(mo.md(f'### Lägsta mätningar av blodtryck {start_date.year} - {end_date.year} 🩸'))
     mo.output.append(mo.plain(blood_pressure_agg.select(pl.col('dt_interval').alias('datum'), pl.col('bloodpressuresystolic').round(1), pl.col('bloodpressurediastolic').round(1)).sort(by='bloodpressurediastolic', descending=False).limit(5)))
     return
 
@@ -796,7 +809,7 @@ def explore_blood_pressure_df(
 
     blood_pressure_exploded = blood_pressure_data_grouped.pivot('metric', index="dt", values="value")
 
-    blood_pressure_agg = blood_pressure_exploded.with_columns(pl.col('dt').dt.truncate(every=interval_input).alias('dt_interval')).group_by('dt_interval').agg(pl.mean(['bloodpressuresystolic', 'bloodpressurediastolic'])).sort(by='dt_interval')
+    blood_pressure_agg = blood_pressure_exploded.with_columns(pl.col('dt').dt.truncate(every=interval_input).alias('dt_interval')).group_by('dt_interval').agg(pl.mean(['bloodpressuresystolic', 'bloodpressurediastolic']).round(0)).sort(by='dt_interval')
 
     mo.output.append(blood_pressure_agg)
     return (blood_pressure_agg,)
@@ -877,7 +890,9 @@ def group_blood_pressure_exclude_duplicates(
 
 @app.cell(column=2, hide_code=True)
 def _(mo):
-    mo.md(r"""## Gym övningar""")
+    mo.md(r"""
+    ## Gym övningar
+    """)
     return
 
 
@@ -1040,7 +1055,6 @@ def display_gym_records_list(jefit_df, mo, pl):
         mo.output.append(mo.md(f'### 💪🏻🎖️ Max vikt för {e}'))
         max_excercise_rep= jefit_df.filter(pl.col('excercise') == e).sort(by='rep_max', descending=True).limit(n=5)
         mo.output.append(max_excercise_rep)
-
     return
 
 
@@ -1058,7 +1072,7 @@ def start_garmin_download(is_wasm, mo):
     return (input_run_garmin_import,)
 
 
-@app.cell
+@app.cell(hide_code=True)
 def get_garmin_credentials(dotenv, is_wasm, mo, os):
     mo.stop(is_wasm() is True, mo.md("Inaktiverar Garmin Connect inladdning när vi kör WASM"))
 
@@ -1083,7 +1097,6 @@ def get_garmin_credentials(dotenv, is_wasm, mo, os):
         mo.output.append(garmin_login_form)
     else:
         garmin_login_found = (_username, _password)
-
     return (garmin_login_found,)
 
 
@@ -1093,11 +1106,13 @@ def get_garmin_raw_data(
     cache,
     datetime,
     garmin_login_found,
+    input_run_garmin_import,
     is_wasm,
     logger,
     mo,
 ):
     mo.stop(not garmin_login_found, mo.md('Avaktar med att hämta Garmin data'))
+    mo.stop(not input_run_garmin_import.value, mo.md('Starta importering av Garmin'))
 
     if not is_wasm():
         # Workaround ensure not attempt to micropip this while used as WASM
@@ -1198,6 +1213,19 @@ async def get_garmin_df_and_filter(
 
     displayed_years = set()
 
+    def remove_existing_dates(current_list: list[str], remove_dates: set[datetime.date]) -> list[str]:
+        logger.info(f'Initial list of dates size: {len(current_list)}')
+        output_list = []
+        for d in current_list:
+            _date = datetime.date.fromisoformat(d)
+            if _date in remove_dates:
+                continue
+            else:
+                output_list.append(d)
+        logger.info(f'Output list of dates size: {len(output_list)}')
+        return output_list
+
+
     def get_pulse_zones(for_year: int=datetime.date.today().year, birth_year: int=1977) -> list[list[int, int]]:
         """Returns a list of heart-rates ranges for zones 0-5"""
         age = for_year - birth_year
@@ -1290,6 +1318,16 @@ async def get_garmin_df_and_filter(
     date_range = [_start_date + datetime.timedelta(days=i) for i in range((_end_date - _start_date).days + 1)]
     date_range_iso = [date.isoformat() for date in date_range]
 
+    existing_df = None
+
+    if file_exists(garmin_file):
+        # existing_df = pl.read_ndjson(_fn, schema_overrides={"dt": pl.Datetime})
+        logger.info(f'Loading existing Garmin {garmin_file} and updating with existing')
+        existing_df = await read_df(garmin_file)
+        logger.info('Removing existing dates from the query to Garmin')
+        existing_dates = set(existing_df.with_columns(date=pl.col('dt').dt.date())['date'])
+        date_range_iso = remove_existing_dates(date_range_iso, existing_dates)
+
     _raw = get_raw_garmin_data(dt=date_range_iso)
     try:
         garmin_activities = convert_garmin_activities(_raw, dob_=dob).with_columns(        pl.col('startTimeLocal').str.strptime(pl.Datetime, format="%Y-%m-%dT%H:%M:%S%.f").alias('dt')
@@ -1302,9 +1340,6 @@ async def get_garmin_df_and_filter(
     garmin_activities = garmin_activities.select(["dt"] + [col for col in cols if col != "dt"]).sort(by="dt").filter(pl.col('distance') > 1000)
 
     if file_exists(garmin_file):
-        # existing_df = pl.read_ndjson(_fn, schema_overrides={"dt": pl.Datetime})
-        logger.info(f'Loading existing Garmin {garmin_file} and updating with existing')
-        existing_df = await read_df(garmin_file)
         all_garmin_data = pl.concat([existing_df, garmin_activities], how='align').unique()
     else:
         logger.info('Building empty Garmin {garmin_file}')
@@ -1324,7 +1359,6 @@ async def display_garmin_df_if_it_exists(
 
     _df = await read_df(garmin_file)
     mo.output.append(_df)
-
     return
 
 
@@ -1362,6 +1396,7 @@ def get_first_garmin_activity(cache, datetime, gc, logger, mo):
         r = datetime.datetime.strptime(first_garmin_activity, '%Y-%m-%d %H:%M:%S').date()
         mo.output.append(mo.md(f'Hittade första datumet lagrad hos Garmin {r:%Y-%m-%d}'))
         return r
+
     return (get_first_garmin_activity,)
 
 
@@ -1453,7 +1488,9 @@ async def count_apple_health_size(apple_file, file_exists, mo, read_df):
 
 @app.cell(column=5, hide_code=True)
 def funbeat_import_info(mo):
-    mo.md(r"""### Import av HTML (Funbeat) och uppdatera Garmin dataset med detta""")
+    mo.md(r"""
+    ### Import av HTML (Funbeat) och uppdatera Garmin dataset med detta
+    """)
     return
 
 
@@ -1520,8 +1557,7 @@ def funbeat_save_to_garmin_file(garmin_file, garmin_with_funbeat_fix_dist):
 
 @app.cell(column=6, hide_code=True)
 def jefit_intro(mo):
-    mo.md(
-        r"""
+    mo.md(r"""
     ### Import av Jefit (gym) data via JSON
 
     Ex. indata
@@ -1551,8 +1587,7 @@ def jefit_intro(mo):
         ...
     ]
     ```
-    """
-    )
+    """)
     return
 
 
@@ -1597,7 +1632,9 @@ def jefit_display_imported(merged_jefit):
 
 @app.cell(column=7)
 def display_info_jefit_csv(mo):
-    mo.md(r"""### Import av Jefit Export (gym) data via CSV""")
+    mo.md(r"""
+    ### Import av Jefit Export (gym) data via CSV
+    """)
     return
 
 
