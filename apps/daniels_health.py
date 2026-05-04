@@ -1,16 +1,18 @@
 # /// script
 # requires-python = ">=3.12"
 # dependencies = [
-#     "altair==5.5.0",
+#     "altair",
 #     "apple-health==2.0.0",
 #     "garminconnect==0.3.3",
+#     "ipython==9.13.0",
 #     "lxml==5.4.0",
-#     "marimo",
-#     "openai==1.78.1",
+#     "marimo[lsp,openai]",
+#     "openai==2.33.0",
 #     "pandas==2.2.3",
 #     "persist-cache==0.4.4",
 #     "polars==1.29.0",
-#     "pyarrow==20.0.0",
+#     "pyarrow",
+#     "pydantic-ai-slim[openai]==1.89.1",
 #     "python-dotenv==1.1.0",
 #     "requests==2.32.3",
 #     "wat==0.6.0",
@@ -254,13 +256,14 @@ def get_data_periods_gantt(
     _jefit_start = jefit_df.select('dt')['dt'].min().year
     _jefit_years = jefit_df.select('dt')['dt'].max().year - _jefit_start
 
-    _gantt = f'''gantt
+    _gantt = f'''
+    gantt
         title Data över år
         Vald period: crit, {start_date.year}, {_chosen_years}y
         Apple: {_apple_start}, {_apple_years}y
         Garmin: {_garmin_start}, {_garmin_years}y
         Gym: {_jefit_start}, {_jefit_years}y
-        '''
+    '''
     mo.mermaid(_gantt)
     return
 
@@ -305,9 +308,15 @@ async def load_or_empty_current_garmin_data(
 
 
 @app.cell(hide_code=True)
-def get_activities_as_chart(current_garmin_data, pl):
+def get_activities_as_chart(alt, current_garmin_data, mo, pl):
     activities_dist = current_garmin_data.rename({"activityType.typeKey": 'activity'}).group_by(pl.col('activity')).agg(pl.len().alias('count'))
-    activities_dist.plot.bar(y='activity:N', x='count:Q').properties(height=100, title='Antal aktiviteter av typ')
+    _chart = activities_dist.plot.bar(y='activity:N', x='count:Q').encode(x=alt.X('count', scale=alt.Scale(domainMin=0, domainMax=200))).properties(height=100, title='Antal aktiviteter av typ').properties(width=600).interactive(bind_x=False, bind_y=False)
+
+    mo.ui.altair_chart(
+        _chart,
+        chart_selection=False,
+        legend_selection=False
+    )
     return (activities_dist,)
 
 
@@ -355,7 +364,7 @@ def get_chart_zones_and_temp(
         title='Median min/km hastighet för aktivitet (tempo)',
         width=600,
         height=200,
-        strokeWidth=10  
+
     )
     interval_median_zones_chart & median_km_per_hour_chart
     return
@@ -681,7 +690,7 @@ def get_df_for_median_tempo(
     return chart_data_mins_per_km, df_activity_tempo
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(current_garmin_data, pl):
     fastest_6km_runs = current_garmin_data.filter((pl.col('activityType.typeKey') == 'running') & (pl.col('distance').is_between(5800, 6200))).select((pl.col('duration') / 60).round().alias('Minuter'), pl.col('dt').dt.date().alias('datum')).sort(by='Minuter', descending=False).limit(10)
 
@@ -689,7 +698,7 @@ def _(current_garmin_data, pl):
     return fastest_6km_runs, longest_running_distances
 
 
-@app.cell
+@app.cell(hide_code=True)
 def display_gym_records(
     end_date,
     fastest_6km_runs,
