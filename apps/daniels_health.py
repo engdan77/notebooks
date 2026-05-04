@@ -62,6 +62,8 @@ def imports_and_global_funcs(logger, mo, running_locally):
     from pyarrow import parquet as pq
     import re
 
+    ALTAIR_WIDTH = 900
+
 
     def is_mobile():
         # Currently not working with WASM so skipping
@@ -133,6 +135,7 @@ def imports_and_global_funcs(logger, mo, running_locally):
         return alt.DateTime(year=_dt.year, month=_dt.month, date=_dt.day, hours=_dt.hour, minutes=_dt.minute)
 
     return (
+        ALTAIR_WIDTH,
         alt,
         datetime,
         file_exists,
@@ -272,7 +275,9 @@ def get_data_periods_gantt(
 def set_month_text(interval_categories, interval_input, mo):
     mo.stop(interval_input is None)
     month_text = [k for k, v in interval_categories.items() if v == interval_input].pop()
-    return (month_text,)
+
+    bar_width = {'dag': 3, 'vecka': 5, 'månad': 5, 'år': 15}.get(month_text, 'dag')
+    return bar_width, month_text
 
 
 @app.cell(hide_code=True)
@@ -308,9 +313,9 @@ async def load_or_empty_current_garmin_data(
 
 
 @app.cell(hide_code=True)
-def get_activities_as_chart(alt, current_garmin_data, mo, pl):
+def get_activities_as_chart(ALTAIR_WIDTH, alt, current_garmin_data, mo, pl):
     activities_dist = current_garmin_data.rename({"activityType.typeKey": 'activity'}).group_by(pl.col('activity')).agg(pl.len().alias('count'))
-    _chart = activities_dist.plot.bar(y='activity:N', x='count:Q').encode(x=alt.X('count', scale=alt.Scale(domainMin=0, domainMax=200))).properties(height=100, title='Antal aktiviteter av typ').properties(width=600).interactive(bind_x=False, bind_y=False)
+    _chart = activities_dist.plot.bar(y='activity:N', x='count:Q').encode(x=alt.X('count', scale=alt.Scale(domainMin=0, domainMax=200))).properties(height=100, title='Antal aktiviteter av typ').properties(width=ALTAIR_WIDTH).interactive(bind_x=False, bind_y=False)
 
     mo.ui.altair_chart(
         _chart,
@@ -322,6 +327,7 @@ def get_activities_as_chart(alt, current_garmin_data, mo, pl):
 
 @app.cell(hide_code=True)
 def get_chart_zones_and_temp(
+    ALTAIR_WIDTH,
     activity_type_form,
     alt,
     chart_data_mins_per_km,
@@ -332,23 +338,6 @@ def get_chart_zones_and_temp(
     start_date,
     to_alt_dt,
 ):
-    '''
-    This example will enforce pan/zoom that is not desired - so lean towards using Altair object
-    median_km_per_hour_chart = chart_data_mins_per_km.plot.line(
-        strokeWidth=alt.value(5),
-        color=alt.value("red"),
-        x=alt.X('month:T', scale=alt.Scale(domain=[
-        first_dt_in_zone_chart, 
-        last_dt_in_zone_chart,
-    ])), y=alt.Y('mean_mins_per_km', scale=alt.Scale(domain=[3, 13]))).properties(
-        title='Median min/km hastighet för aktivitet',
-        width=600,
-        height=400,
-        strokeWidth=alt.value(10)
-    )
-    '''
-
-    # mo.stop(activity_for_zones.value is None, mo.md('Välj aktivitet för zoner'))
     mo.stop(any(_ is None for _ in activity_type_form.value.values()) is True, mo.md('Välj aktivitet för zoner'))
 
     min_tempo = chart_data_mins_per_km.select('mean_mins_per_km').min()['mean_mins_per_km'].first() - 0.5
@@ -357,12 +346,13 @@ def get_chart_zones_and_temp(
     median_km_per_hour_chart = alt.Chart(chart_data_mins_per_km.filter(pl.col('dt_interval') >= start_date)).mark_line(
         strokeWidth=5,
         color='red',
+        interpolate="monotone"
         ).encode(
         x=alt.X('dt_interval:T', scale=alt.Scale(domain=[to_alt_dt(start_date), to_alt_dt(end_date)])),
         y=alt.Y('mean_mins_per_km', scale=alt.Scale(domain=[min_tempo, max_tempo]))   
     ).properties(
         title='Median min/km hastighet för aktivitet (tempo)',
-        width=600,
+        width=ALTAIR_WIDTH,
         height=200,
 
     )
@@ -372,8 +362,10 @@ def get_chart_zones_and_temp(
 
 @app.cell(hide_code=True)
 def get_count_distances_chart(
+    ALTAIR_WIDTH,
     activity_input,
     alt,
+    bar_width,
     current_garmin_data,
     end_date,
     interval_input,
@@ -406,7 +398,7 @@ def get_count_distances_chart(
     # Create a stacked bar chart
     chart_activity_distances = (
         alt.Chart(_activity_counts)
-        .mark_bar()
+        .mark_bar(width=bar_width)
         .encode(
             x=alt.X("dt_interval:T", title="Tid", scale=alt.Scale(domain=[to_alt_dt(start_date), to_alt_dt(end_date)])),
             y=alt.Y("activity_count:Q", title="Antal aktiviteter"),
@@ -415,7 +407,7 @@ def get_count_distances_chart(
         )
         .properties(
             title=f"Antal aktiviteter med distanser per {month_text}",
-            width=600,
+            width=ALTAIR_WIDTH,
             height=200
         )
     )
@@ -426,7 +418,9 @@ def get_count_distances_chart(
 
 @app.cell(hide_code=True)
 def count_gym_vs_running(
+    ALTAIR_WIDTH,
     alt,
+    bar_width,
     current_garmin_data,
     end_date,
     interval_input,
@@ -457,15 +451,15 @@ def count_gym_vs_running(
     _joined_agg_df = pl.concat((gym_count_agg_df, running_count_agg_df))
 
     chart_count_activities = (
-        alt.Chart(_joined_agg_df).mark_bar()
+        alt.Chart(_joined_agg_df).mark_bar(width=bar_width)
         .encode(
             x=alt.X("dt_interval:T", title="Tid", scale=alt.Scale(domain=[to_alt_dt(start_date), to_alt_dt(end_date)])), 
             y=alt.Y('count', title='Antal'),
-            color=alt.Color('category', title='Aktivitet', scale=alt.Scale(range=('red', 'yellow')))
+            color=alt.Color('category', title='Aktivitet', scale=alt.Scale(range=('green', 'blue')))
         )
     ).properties(
             title=f"Antal gånger aktiviteter utförts per {month_text}",
-            width=600,
+            width=ALTAIR_WIDTH,
             height=200
         )
 
@@ -475,16 +469,18 @@ def count_gym_vs_running(
 
 @app.cell(hide_code=True)
 def get_walk_run_distance_chart(
+    ALTAIR_WIDTH,
     alt,
+    bar_width,
     end_date,
     month_text,
     start_date,
     to_alt_dt,
     walk_run_df,
 ):
-    distance_chart = alt.Chart(walk_run_df).mark_bar().encode(x=alt.X('dt_interval', title='Datum', scale=alt.Scale(domain=[to_alt_dt(start_date), to_alt_dt(end_date)])), y=alt.Y('value', title='kilometer'), color=alt.Color('type', title='Kategori')).properties(
+    distance_chart = alt.Chart(walk_run_df).mark_bar(width=bar_width).encode(x=alt.X('dt_interval', title='Datum', scale=alt.Scale(domain=[to_alt_dt(start_date), to_alt_dt(end_date)])), y=alt.Y('value', title='kilometer'), color=alt.Color('type', title='Kategori')).properties(
         title=f'Antal km per {month_text}',
-        width=600,
+        width=ALTAIR_WIDTH,
         height=300
     )
     distance_chart
@@ -614,8 +610,10 @@ def create_logger():
 
 @app.cell(hide_code=True)
 def get_median_pulse_zones_chart(
+    ALTAIR_WIDTH,
     activity_type_form,
     alt,
+    bar_width,
     current_garmin_data,
     end_date,
     interval_input,
@@ -628,9 +626,6 @@ def get_median_pulse_zones_chart(
     mo.stop(any(_ is None for _ in activity_type_form.value.values()) is True, mo.md('Välj aktivitet för zoner'))
 
     activity_input = activity_type_form.value['activity_input']
-    # interval_input = graph_form['interval_input'].value
-
-    # month_text = [k for k, v in interval_categories.items() if v == interval_input].pop()
 
     interval_median_zones = (current_garmin_data.filter(pl.col('activityType.typeKey').eq(activity_input))
         .with_columns([
@@ -656,7 +651,7 @@ def get_median_pulse_zones_chart(
     interval_median_zones_chart = alt.Chart(interval_median_zones).transform_fold(
         ["median_zone1", "median_zone2", "median_zone3", "median_zone4", "median_zone5"],
         as_=['zone', 'median_time']
-    ).mark_bar(size=5).encode(
+    ).mark_bar(size=bar_width).encode(
         x=alt.X('yearmonth(dt_interval):T', title='Månad', scale=alt.Scale(domain=[to_alt_dt(start_date), to_alt_dt(end_date)])),
         y=alt.Y('median_time:Q', title='Median tid i minuter'),
         color=alt.Color('zone:N', scale=alt.Scale(
@@ -666,7 +661,7 @@ def get_median_pulse_zones_chart(
         order=alt.Order('zone:N', sort='ascending')
     ).properties(
         title=f'Median tid per aktivitet & tider i puls zoner för {month_text}',
-        width=600,
+        width=ALTAIR_WIDTH,
         height=300,
     )
     return activity_input, interval_median_zones_chart
@@ -728,6 +723,7 @@ def _(mo):
 
 @app.cell(hide_code=True)
 def display_blood_pressure_chart(
+    ALTAIR_WIDTH,
     alt,
     blood_pressure_agg,
     end_date,
@@ -738,8 +734,8 @@ def display_blood_pressure_chart(
     _base = alt.Chart(blood_pressure_agg).mark_line(interpolate="monotone").encode(
         x=alt.X('dt_interval:T', title='Datum', scale=alt.Scale(domain=[to_alt_dt(start_date), to_alt_dt(end_date)])),
     ).properties(
-        title=f'Medel blodtryck per {month_text}',
-        width=600,
+        title=f'Medel blodtryck per {month_text} (snitt)',
+        width=ALTAIR_WIDTH,
         height=300,
     )
 
@@ -752,6 +748,7 @@ def display_blood_pressure_chart(
 
 @app.cell(hide_code=True)
 def display_weight_fat_plot(
+    ALTAIR_WIDTH,
     alt,
     end_date,
     mo,
@@ -770,7 +767,7 @@ def display_weight_fat_plot(
     df_min_weight = _df_weight['bodymass'].min()
     df_max_weight = _df_weight['bodymass'].max()
 
-    _base = alt.Chart(_df_weight).properties(width=600, height=300)
+    _base = alt.Chart(_df_weight).properties(width=ALTAIR_WIDTH, height=300)
 
     _weight = _base.mark_line(strokeWidth=3, color='red', interpolate="monotone").encode(x=alt.X('dt_interval:T', title='Datum', scale=alt.Scale(domain=[to_alt_dt(start_date), to_alt_dt(end_date)])), y=alt.Y('weight:Q', title='Vikt (kg)   🟥', scale=alt.Scale(domainMin=df_min_weight, domainMax=df_max_weight)))
 
@@ -956,7 +953,7 @@ def get_1rm_gym_for_all_months(exercises, jefit_df, mo, pl):
         jefit_df.select(pl.col('dt')
             .dt.truncate('1mo'), 'excercise', 'rep_max')
             .group_by('dt', 'excercise')
-            .agg(pl.col('rep_max').max())
+            .agg(pl.col('rep_max').max().round(0))
             .sort(by='dt')
             .filter(pl.col('excercise').is_in(exercises))
     )
@@ -1062,7 +1059,7 @@ def display_detailed_table_selected_1rm_period(
 def display_gym_records_list(jefit_df, mo, pl):
     for e in ('Barbell Bench Press', 'Barbell Squat'):
         mo.output.append(mo.md(f'### 💪🏻🎖️ Max vikt för {e}'))
-        max_excercise_rep= jefit_df.filter(pl.col('excercise') == e).sort(by='rep_max', descending=True).limit(n=5)
+        max_excercise_rep= jefit_df.with_columns(rep_max=pl.col('rep_max').round(0)).filter(pl.col('excercise') == e).sort(by='rep_max', descending=True).limit(n=5)
         mo.output.append(max_excercise_rep)
     return
 
