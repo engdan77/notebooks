@@ -21,7 +21,7 @@
 
 import marimo
 
-__generated_with = "0.23.4"
+__generated_with = "0.23.5"
 app = marimo.App(
     width="columns",
     layout_file="layouts/daniels_health.grid.json",
@@ -789,14 +789,17 @@ def display_blood_pressure_records(
     blood_pressure_agg,
     end_date,
     mo,
+    month_text,
     pl,
     start_date,
 ):
-    mo.output.append(mo.md(f'### Högsta mätningar av blodtryck {start_date.year} - {end_date.year} 🩸'))
+    mo.output.append(mo.md(f'### Högsta mätningar av blodtryck {start_date.year} - {end_date.year} (snitt per {month_text})🩸'))
     mo.output.append(mo.plain(blood_pressure_agg.select(pl.col('dt_interval').alias('datum'), pl.col('bloodpressuresystolic').round(1), pl.col('bloodpressurediastolic').round(1)).sort(by='bloodpressurediastolic', descending=True).limit(5)))
 
-    mo.output.append(mo.md(f'### Lägsta mätningar av blodtryck {start_date.year} - {end_date.year} 🩸'))
+    mo.output.append(mo.md(f'### Lägsta mätningar av blodtryck {start_date.year} - {end_date.year} (snitt per {month_text}) 🩸'))
     mo.output.append(mo.plain(blood_pressure_agg.select(pl.col('dt_interval').alias('datum'), pl.col('bloodpressuresystolic').round(1), pl.col('bloodpressurediastolic').round(1)).sort(by='bloodpressurediastolic', descending=False).limit(5)))
+
+    mo.output.append(mo.md('_**Tips:** För mer exakta värden ändra till `gruppera per = dag` och en snävare `period`_'))
     return
 
 
