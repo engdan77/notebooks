@@ -313,15 +313,11 @@ async def load_or_empty_current_garmin_data(
 
 
 @app.cell(hide_code=True)
-def get_activities_as_chart(ALTAIR_WIDTH, alt, current_garmin_data, mo, pl):
+def get_activities_as_chart(ALTAIR_WIDTH, alt, current_garmin_data, pl):
     activities_dist = current_garmin_data.rename({"activityType.typeKey": 'activity'}).group_by(pl.col('activity')).agg(pl.len().alias('count'))
-    _chart = activities_dist.plot.bar(y='activity:N', x='count:Q').encode(x=alt.X('count', scale=alt.Scale(domainMin=0, domainMax=200))).properties(height=100, title='Antal aktiviteter av typ').properties(width=ALTAIR_WIDTH).interactive(bind_x=False, bind_y=False)
+    _chart = activities_dist.plot.bar(y='activity:N', x='count:Q').encode(x=alt.X('count', scale=alt.Scale(domainMin=0))).properties(height=100, title='Antal aktiviteter av typ').properties(width=ALTAIR_WIDTH).interactive(bind_x=False, bind_y=False)
 
-    mo.ui.altair_chart(
-        _chart,
-        chart_selection=False,
-        legend_selection=False
-    )
+    _chart
     return (activities_dist,)
 
 
@@ -704,7 +700,10 @@ def display_gym_records(
     mo.output.append(mo.md(f'### Längsta löpningen {start_date.year} - {end_date.year} 🥇'))
     mo.output.append(mo.plain(longest_running_distances))
     mo.output.append(mo.md(f'### Snabbast 6km löpningen {start_date.year} - {end_date.year} 🥇'))
-    mo.output.append(mo.plain(fastest_6km_runs))
+    if not fastest_6km_runs.is_empty():
+        mo.output.append(mo.plain(fastest_6km_runs))
+    else:
+        mo.output.append(mo.md('Ingen'))
     return
 
 
@@ -913,7 +912,7 @@ async def read_jefit_df(file_exists, jefit_file, mo, pl, read_df):
     if file_exists(jefit_file):
         jefit_df = await read_df(jefit_file)
         if jefit_df is not None:
-            jefit_df = jefit_df.sort(by='dt').select('dt', 'excercise', pl.col('rep_max').cast(pl.Float32), 'sets')
+            jefit_df = jefit_df.sort(by='dt').select('dt', 'excercise', pl.col('rep_max').cast(pl.Float32), 'sets').with_columns(rep_max=pl.col('rep_max').round(0))
         else:
             mo.stop(True, mo.md('Unable to load Jefit Gym data'))
     return (jefit_df,)
@@ -984,7 +983,13 @@ def get_bar_chart_1rm_gym_per_month(alt, exercises, jefit_max_rep_df, mo):
 
 
 @app.cell(hide_code=True)
-def present_selectable_1rm_line_chart(alt, jefit_max_rep_df, mo, pl):
+def present_selectable_1rm_line_chart(
+    ALTAIR_WIDTH,
+    alt,
+    jefit_max_rep_df,
+    mo,
+    pl,
+):
     # This defines a mouseover selection for points. fields=["dt"] allows Altair to identify other points with the same date. You will use this to create a vertical line highlight when a user hovers over a point.
     _hover = alt.selection_point(
         fields=["dt"],
@@ -1010,7 +1015,7 @@ def present_selectable_1rm_line_chart(alt, jefit_max_rep_df, mo, pl):
     # Add selection feature and add as params
     brush = alt.selection_interval(encodings=["x"])
 
-    jefit_chart = alt.Chart(jefit_max_rep_df).mark_line(size=3).encode(
+    jefit_chart = alt.Chart(jefit_max_rep_df).mark_line(size=3, interpolate="monotone").encode(
         x=alt.X('yearmonth(dt):T'),
         y=alt.Y('rep_max:Q').scale(domainMin=35),
         color=alt.Color('excercise', title='Övning', scale=alt.Scale(range=['red', 'white', 'orange', 'yellow'])),
@@ -1019,7 +1024,7 @@ def present_selectable_1rm_line_chart(alt, jefit_max_rep_df, mo, pl):
                 alt.Tooltip("rep_max", title="1RM"),
                 alt.Tooltip("excercise", title="Övning"),
             ]
-    ).add_params(_hover, brush)
+    ).add_params(_hover, brush).properties(width=ALTAIR_WIDTH)
 
 
     # Use Marimo to select from ti
@@ -1052,7 +1057,7 @@ def display_detailed_table_selected_1rm_period(
     else:
         mo.output.append(mo.md(f'**Gym period vald:** {ts_to_iso(jefit_start_ts):%Y-%m-%d} - {ts_to_iso(jefit_end_ts):%Y-%m-%d}'))
 
-    mo.stop(jefit_start_ts == 0, mo.md('Välj en gym period'))
+    mo.stop(jefit_start_ts == 0, mo.md('Markera en period i gym grafen för mer detaljer'))
     mo.output.append(mo.md('### Vald gym period'))
     mo.output.append(jefit_df.filter(pl.col('dt').is_between(ts_to_iso(jefit_start_ts), ts_to_iso(jefit_end_ts))))
     return
