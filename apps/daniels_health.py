@@ -37,7 +37,7 @@ def _(mo):
 
     För mer detaljer gå [hit](https://github.com/engdan77/notebooks) eller för andra utvecklade projekt besök [Daniels Github](https://github.com/engdan77).
 
-    💾 Källkod: [här](https://github.com/engdan77/notebooks/blob/main/apps/daniels_health.py)
+    💾 Källkod: [här](https://github.com/engdan77/notebooks/blob/main/apps/daniels_health.py) (2025.5.1)
     ✉️ E-post: [daniel@engvalls.eu](mailto:daniel@engvalls.eu)
     """)
     return
@@ -848,9 +848,17 @@ def explore_blood_pressure_df(
     return (blood_pressure_agg,)
 
 
+@app.cell
+def _(mo):
+    apple_run_button = mo.ui.run_button(label='Visa historik från Apple (blodtryck etc)', kind='success', tooltip='Detta kan ta lite tid ...')
+    apple_run_button
+    return (apple_run_button,)
+
+
 @app.cell(hide_code=True)
 async def load_apple_df(
     apple_file,
+    apple_run_button,
     end_date,
     file_exists,
     is_mobile,
@@ -862,6 +870,8 @@ async def load_apple_df(
     relevant_apple_colums,
     start_date,
 ):
+    mo.stop(not apple_run_button.value, mo.md('Klicka på "Visa historik från Apple"'))
+
     if file_exists(apple_file):
         if is_wasm():
             if is_mobile():
@@ -943,8 +953,24 @@ def _(mo):
     return
 
 
+@app.cell
+def _(mo):
+    gym_run_button = mo.ui.run_button(label='Visa gym historik', kind='success', tooltip='Detta kan ta lite tid...')
+    gym_run_button
+    return (gym_run_button,)
+
+
 @app.cell(hide_code=True)
-async def read_jefit_df(file_exists, jefit_file, mo, pl, read_df):
+async def read_jefit_df(
+    file_exists,
+    gym_run_button,
+    jefit_file,
+    mo,
+    pl,
+    read_df,
+):
+    mo.stop(not gym_run_button.value, mo.md('Klicka på "Visa gym historik"'))
+
     # Create empty and attempt load
     jefit_df = pl.DataFrame({'dt': [], 'excercise': [], 'rep_max': [], 'sets': []}, schema={'dt': pl.datatypes.Datetime, 'excercise': pl.datatypes.String, 'rep_max': pl.datatypes.Float32, 'sets': pl.datatypes.List}).lazy()
 
@@ -1417,6 +1443,7 @@ async def display_garmin_df_if_it_exists(
     mo.stop(file_exists(garmin_file) is False)
 
     _df = await read_df(garmin_file)
+    mo.output.append(mo.md('### Data från Garmin'))
     mo.output.append(_df.collect())
     return
 
