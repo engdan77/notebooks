@@ -1,7 +1,7 @@
 # /// script
 # requires-python = ">=3.12"
 # dependencies = [
-#     "altair",
+#     "altair==6.1.0",
 #     "apple-health==2.0.0",
 #     "garminconnect==0.3.3",
 #     "ipython==9.13.0",
@@ -21,7 +21,7 @@
 
 import marimo
 
-__generated_with = "0.23.5"
+__generated_with = "0.23.6"
 app = marimo.App(
     width="columns",
     layout_file="layouts/daniels_health.grid.json",
@@ -106,7 +106,7 @@ def imports_and_global_funcs(logger, mo, running_locally):
         return c
 
 
-    async def read_df(loc) -> pl.DataFrame:
+    async def read_df(loc) -> pl.LazyFrame:
         # Due to need workaround for remotely loading Parquete files - https://github.com/pola-rs/polars/issues/20876
         _df = None
         if not running_locally:
@@ -119,9 +119,9 @@ def imports_and_global_funcs(logger, mo, running_locally):
             except Exception:
                 logger.error(f'Unable to read downloaded parquet file {loc}')
                 return None
-            _df = pl.from_arrow(table)
+            _df = pl.from_arrow(table).lazy()
         else: 
-            _df = pl.read_parquet(loc)
+            _df = pl.scan_parquet(loc)
         return _df
 
 
@@ -247,17 +247,24 @@ def get_data_periods_gantt(
     end_date,
     jefit_df,
     mo,
+    pl,
     start_date,
 ):
     _chosen_years = end_date.year - start_date.year
     if not _chosen_years:
         _chosen_years = 1
-    _apple_start = all_apple_df.select('dt')['dt'].min().year
-    _apple_years = all_apple_df.select('dt')['dt'].max().year - _apple_start
-    _garmin_start = all_garmin_df.select('dt')['dt'].min().year
-    _garmin_years = all_garmin_df.select('dt')['dt'].max().year - _garmin_start
-    _jefit_start = jefit_df.select('dt')['dt'].min().year
-    _jefit_years = jefit_df.select('dt')['dt'].max().year - _jefit_start
+
+    _apple_stats = all_apple_df.select(min_dt=pl.col('dt').min(), max_dt=pl.col('dt').max()).collect()
+    _apple_start = _apple_stats.get_column('min_dt')[0].year
+    _apple_years = _apple_stats.get_column('max_dt')[0].year - _apple_start
+
+    _garmin_stats = all_garmin_df.select(min_dt=pl.col('dt').min(), max_dt=pl.col('dt').max()).collect()
+    _garmin_start = _garmin_stats.get_column('min_dt')[0].year
+    _garmin_years = _garmin_stats.get_column('max_dt')[0].year - _garmin_start
+
+    _jefit_stats = jefit_df.select(min_dt=pl.col('dt').min(), max_dt=pl.col('dt').max()).collect()
+    _jefit_start = _jefit_stats.get_column('min_dt')[0].year
+    _jefit_years = _jefit_stats.get_column('max_dt')[0].year - _jefit_start
 
     _gantt = f'''
     gantt
@@ -303,18 +310,28 @@ async def load_or_empty_current_garmin_data(
         _df = await read_df(garmin_file)
         all_garmin_df = _df
         current_garmin_data = _df.filter(pl.col('dt').is_between(start_date, end_date))
-        _sorted_df = _df.select('dt').sort(by='dt')['dt']
-        # mo.output.append(f'''Tillänglig Garmin data punkter finns för {_sorted_df.min():%Y-%m-%d} <-> {_sorted_df.max():%Y-%m-%d}''')
-        mo.output.append(mo.Html(f'''<u><b>Garmin data</b/></u>Period: {_sorted_df.min():%Y-%m-%d} - {_sorted_df.max():%Y-%m-%d} [{all_garmin_df.height} rader]</br>''')) 
+
+        # Collect only necessary stats for display
+        _stats = _df.select(
+            min_dt=pl.col('dt').min(),
+            max_dt=pl.col('dt').max(),
+            count=pl.len()
+        ).collect()
+
+        _min_dt = _stats.get_column('min_dt')[0]
+        _max_dt = _stats.get_column('max_dt')[0]
+        _count = _stats.get_column('count')[0]
+
+        mo.output.append(mo.Html(f'''<u><b>Garmin data</b/></u>Period: {_min_dt:%Y-%m-%d} - {_max_dt:%Y-%m-%d} [{_count} rader]</br>''')) 
     else:
-        current_garmin_data = pl.DataFrame({k: [] for k in relevant_garmin_colums})
+        current_garmin_data = pl.DataFrame({k: [] for k in relevant_garmin_colums}).lazy()
         all_garmin_df = current_garmin_data
     return all_garmin_df, current_garmin_data
 
 
 @app.cell(hide_code=True)
 def get_activities_as_chart(ALTAIR_WIDTH, alt, current_garmin_data, pl):
-    activities_dist = current_garmin_data.rename({"activityType.typeKey": 'activity'}).group_by(pl.col('activity')).agg(pl.len().alias('count'))
+    activities_dist = current_garmin_data.rename({"activityType.typeKey": 'activity'}).group_by(pl.col('activity')).agg(pl.len().alias('count')).collect()
     _chart = activities_dist.plot.bar(y='activity:N', x='count:Q').encode(x=alt.X('count', scale=alt.Scale(domainMin=0))).properties(height=100, title='Antal aktiviteter av typ').properties(width=ALTAIR_WIDTH).interactive(bind_x=False, bind_y=False)
 
     _chart
@@ -336,10 +353,15 @@ def get_chart_zones_and_temp(
 ):
     mo.stop(any(_ is None for _ in activity_type_form.value.values()) is True, mo.md('Välj aktivitet för zoner'))
 
-    min_tempo = chart_data_mins_per_km.select('mean_mins_per_km').min()['mean_mins_per_km'].first() - 0.5
-    max_tempo = chart_data_mins_per_km.select('mean_mins_per_km').max()['mean_mins_per_km'].first() + 0.5
+    _stats = chart_data_mins_per_km.select(
+        min_v=pl.col('mean_mins_per_km').min(),
+        max_v=pl.col('mean_mins_per_km').max()
+    ).collect()
 
-    median_km_per_hour_chart = alt.Chart(chart_data_mins_per_km.filter(pl.col('dt_interval') >= start_date)).mark_line(
+    min_tempo = _stats.get_column('min_v')[0] - 0.5
+    max_tempo = _stats.get_column('max_v')[0] + 0.5
+
+    median_km_per_hour_chart = alt.Chart(chart_data_mins_per_km.filter(pl.col('dt_interval') >= start_date).collect()).mark_line(
         strokeWidth=5,
         color='red',
         interpolate="monotone"
@@ -393,7 +415,7 @@ def get_count_distances_chart(
 
     # Create a stacked bar chart
     chart_activity_distances = (
-        alt.Chart(_activity_counts)
+        alt.Chart(_activity_counts.collect())
         .mark_bar(width=bar_width)
         .encode(
             x=alt.X("dt_interval:T", title="Tid", scale=alt.Scale(domain=[to_alt_dt(start_date), to_alt_dt(end_date)])),
@@ -444,7 +466,7 @@ def count_gym_vs_running(
         .with_columns(pl.lit('running').alias('category'), pl.col('dt_interval').dt.date().alias('dt_interval'))
     )
 
-    _joined_agg_df = pl.concat((gym_count_agg_df, running_count_agg_df))
+    _joined_agg_df = pl.concat((gym_count_agg_df, running_count_agg_df)).collect()
 
     chart_count_activities = (
         alt.Chart(_joined_agg_df).mark_bar(width=bar_width)
@@ -474,7 +496,7 @@ def get_walk_run_distance_chart(
     to_alt_dt,
     walk_run_df,
 ):
-    distance_chart = alt.Chart(walk_run_df).mark_bar(width=bar_width).encode(x=alt.X('dt_interval', title='Datum', scale=alt.Scale(domain=[to_alt_dt(start_date), to_alt_dt(end_date)])), y=alt.Y('value', title='kilometer'), color=alt.Color('type', title='Kategori')).properties(
+    distance_chart = alt.Chart(walk_run_df.collect()).mark_bar(width=bar_width).encode(x=alt.X('dt_interval', title='Datum', scale=alt.Scale(domain=[to_alt_dt(start_date), to_alt_dt(end_date)])), y=alt.Y('value', title='kilometer'), color=alt.Color('type', title='Kategori')).properties(
         title=f'Antal km per {month_text}',
         width=ALTAIR_WIDTH,
         height=300
@@ -488,7 +510,7 @@ def chart_count_of_distances(activity_input, alt, current_garmin_data, pl):
     df_distance_in_km = current_garmin_data.filter(pl.col('activityType.typeKey').eq(activity_input)).select('dt', (pl.col('distance')/1000).alias('distance_km'))
 
     df_distance_in_km_rounded = df_distance_in_km.with_columns(pl.col('distance_km').round())
-    df_grouped_ = df_distance_in_km_rounded.group_by(pl.col('distance_km')).agg(pl.len().alias('count')).sort(by='distance_km')
+    df_grouped_ = df_distance_in_km_rounded.group_by(pl.col('distance_km')).agg(pl.len().alias('count')).sort(by='distance_km').collect()
 
     alt.Chart(df_grouped_).mark_bar(size=20).encode(x=alt.X('distance_km:N', title='Kilometer'), y=alt.Y('count:Q', title='Antal')).properties(height=200, title='Antal löprundor grupperade på längd i kilometer')
     return
@@ -504,7 +526,7 @@ def get_records_tempo(df_activity_tempo, is_wasm, mo, pl):
         # Format as minutes:seconds
         return f"{minutes}:{seconds:02}"
 
-    _df_with_times = df_activity_tempo.filter(pl.col('distance').is_between(5800, 6200)).with_columns(time=pl.col('mins_per_km').map_elements(float_to_minutes_seconds, return_dtype=pl.String).alias('tempo')).sort(by='mins_per_km', descending=False).select('dt', 'time').rename({'dt': 'Datum', 'time': 'Tempo (min/km)'})
+    _df_with_times = df_activity_tempo.filter(pl.col('distance').is_between(5800, 6200)).with_columns(time=pl.col('mins_per_km').map_elements(float_to_minutes_seconds, return_dtype=pl.String).alias('tempo')).sort(by='mins_per_km', descending=False).select('dt', 'time').rename({'dt': 'Datum', 'time': 'Tempo (min/km)'}).collect()
 
     if not is_wasm():
         _table = mo.ui.table(_df_with_times, page_size=5, show_column_summaries=False)
@@ -518,9 +540,9 @@ def get_records_tempo(df_activity_tempo, is_wasm, mo, pl):
 
 @app.cell(hide_code=True)
 def get_records_distance(current_garmin_data, is_wasm, mo, pl):
-    _longest_activities_df = current_garmin_data.select('dt', 'distance', 'activityType.typeKey', (pl.col('distance') / 1000).round().alias('km')).sort(by='distance', descending=True).rename({'activityType.typeKey': 'Aktivitet', 'dt': 'Datum'}).select('Datum', 'km', 'Aktivitet')
+    _longest_activities_df = current_garmin_data.select('dt', 'distance', 'activityType.typeKey', (pl.col('distance') / 1000).round().alias('km')).sort(by='distance', descending=True).rename({'activityType.typeKey': 'Aktivitet', 'dt': 'Datum'}).select('Datum', 'km', 'Aktivitet').collect()
 
-    mo.output.append(mo.md('## Rekord distanser för period'))
+    mo.output.append(mo.md('## Rekord distanser for period'))
 
     if not is_wasm():
         _t = mo.ui.table(_longest_activities_df, show_column_summaries=False)
@@ -533,16 +555,17 @@ def get_records_distance(current_garmin_data, is_wasm, mo, pl):
 
 @app.cell(hide_code=True)
 def explore_garmin_dataset(current_garmin_data, is_wasm, mo):
+    _df = current_garmin_data.collect()
     if is_wasm():
-        mo.plain(current_garmin_data)
+        mo.plain(_df)
     else:
-        mo.ui.dataframe(current_garmin_data, page_size=10)
+        mo.ui.dataframe(_df, page_size=10)
     return
 
 
 @app.cell(hide_code=True)
 def get_walking_distance_from_apple_df(apple_df, interval_input, mo, pl):
-    mo.stop(apple_df.height == 0 or not interval_input)
+    mo.stop(apple_df.collect().is_empty() or not interval_input)
 
     walk_distance_df = apple_df.filter(pl.col('metric') == 'distancewalkingrunning').group_by(['dt', 'metric']).agg(pl.col('value').sum())
 
@@ -565,7 +588,7 @@ def get_run_distance_df_from_garmin(
     mo,
     pl,
 ):
-    mo.stop(current_garmin_data.height == 0 or not interval_input)
+    mo.stop(current_garmin_data.collect().is_empty() or not interval_input)
 
     run_distance_df = current_garmin_data.filter(pl.col('activityType.typeKey') == 'running').with_columns(pl.col('dt').dt.truncate(every=interval_input).alias('dt_')).with_columns(pl.col('dt_').dt.date().alias('dt_interval')).select('dt_interval', 'distance').group_by('dt_interval').agg(pl.col('distance').sum() / 1000).rename({'distance': 'value'}).with_columns(pl.lit('run').alias('type'))
     return (run_distance_df,)
@@ -644,7 +667,7 @@ def get_median_pulse_zones_chart(
 
     _colors = {'median_zone1': 'gray', 'median_zone2': 'lightblue', 'median_zone3': 'green', 'median_zone4': 'orange', 'median_zone5': 'red'}
 
-    interval_median_zones_chart = alt.Chart(interval_median_zones).transform_fold(
+    interval_median_zones_chart = alt.Chart(interval_median_zones.collect()).transform_fold(
         ["median_zone1", "median_zone2", "median_zone3", "median_zone4", "median_zone5"],
         as_=['zone', 'median_time']
     ).mark_bar(size=bar_width).encode(
@@ -683,9 +706,9 @@ def get_df_for_median_tempo(
 
 @app.cell(hide_code=True)
 def _(current_garmin_data, pl):
-    fastest_6km_runs = current_garmin_data.filter((pl.col('activityType.typeKey') == 'running') & (pl.col('distance').is_between(5800, 6200))).select((pl.col('duration') / 60).round().alias('Minuter'), pl.col('dt').dt.date().alias('datum')).sort(by='Minuter', descending=False).limit(10)
+    fastest_6km_runs = current_garmin_data.filter((pl.col('activityType.typeKey') == 'running') & (pl.col('distance').is_between(5800, 6200))).select((pl.col('duration') / 60).round().alias('Minuter'), pl.col('dt').dt.date().alias('datum')).sort(by='Minuter', descending=False).limit(10).collect()
 
-    longest_running_distances = current_garmin_data.filter(pl.col('activityType.typeKey') == 'running').sort(by='distance', descending=True).select((pl.col('distance') / 1000).round(1).alias('km'), pl.duration(seconds=pl.col('duration')).alias('tid'), pl.col('dt').dt.date().alias('datum')).limit(10)
+    longest_running_distances = current_garmin_data.filter(pl.col('activityType.typeKey') == 'running').sort(by='distance', descending=True).select((pl.col('distance') / 1000).round(1).alias('km'), pl.duration(seconds=pl.col('duration')).alias('tid'), pl.col('dt').dt.date().alias('datum')).limit(10).collect()
     return fastest_6km_runs, longest_running_distances
 
 
@@ -730,7 +753,8 @@ def display_blood_pressure_chart(
     start_date,
     to_alt_dt,
 ):
-    _base = alt.Chart(blood_pressure_agg).mark_line(interpolate="monotone").encode(
+    _df = blood_pressure_agg.collect() if hasattr(blood_pressure_agg, 'collect') else blood_pressure_agg
+    _base = alt.Chart(_df).mark_line(interpolate="monotone").encode(
         x=alt.X('dt_interval:T', title='Datum', scale=alt.Scale(domain=[to_alt_dt(start_date), to_alt_dt(end_date)])),
     ).properties(
         title=f'Medel blodtryck per {month_text} (snitt)',
@@ -811,13 +835,14 @@ def explore_blood_pressure_df(
     pl,
 ):
     # mo.stop(any(_ is None for _ in activity_type_form.value.values()) is True)
-    mo.stop(interval_input is None or blood_pressure_data_grouped.height == 0, mo.md('Ingen data för period'))
+    _df_grouped = blood_pressure_data_grouped.collect()
+    mo.stop(interval_input is None or _df_grouped.height == 0, mo.md('Ingen data för period'))
 
     mo.output.append(mo.md(f'### Utforska blodtrycket för perioden med snitt per {month_text}'))
 
-    blood_pressure_exploded = blood_pressure_data_grouped.pivot('metric', index="dt", values="value")
+    blood_pressure_exploded = _df_grouped.pivot('metric', index="dt", values="value")
 
-    blood_pressure_agg = blood_pressure_exploded.with_columns(pl.col('dt').dt.truncate(every=interval_input).alias('dt_interval')).group_by('dt_interval').agg(pl.mean(['bloodpressuresystolic', 'bloodpressurediastolic']).round(0)).sort(by='dt_interval')
+    blood_pressure_agg = blood_pressure_exploded.lazy().with_columns(pl.col('dt').dt.truncate(every=interval_input).alias('dt_interval')).group_by('dt_interval').agg(pl.mean(['bloodpressuresystolic', 'bloodpressurediastolic']).round(0)).sort(by='dt_interval').collect()
 
     mo.output.append(blood_pressure_agg)
     return (blood_pressure_agg,)
@@ -847,13 +872,24 @@ async def load_apple_df(
                 logger.info('You are running WASM from a computer browser')
             all_apple_df = await read_df(apple_file)
         else:
-            all_apple_df = pl.read_parquet(apple_file)
+            all_apple_df = pl.scan_parquet(apple_file)
 
         _df = all_apple_df.filter(pl.col('dt').is_between(start_date, end_date))
-        _dt = all_apple_df.select('dt').sort(by='dt')['dt']
-        mo.output.append(mo.Html(f'''<u><b>Apple Hälsa data</b/></u>Period: {_dt.min():%Y-%m-%d} - {_dt.max():%Y-%m-%d} [{all_apple_df.height} rader]</br>'''))
+
+        # Collect only necessary stats for display
+        _stats = all_apple_df.select(
+            min_dt=pl.col('dt').min(),
+            max_dt=pl.col('dt').max(),
+            count=pl.len()
+        ).collect()
+
+        _min_dt = _stats.get_column('min_dt')[0]
+        _max_dt = _stats.get_column('max_dt')[0]
+        _count = _stats.get_column('count')[0]
+
+        mo.output.append(mo.Html(f'''<u><b>Apple Hälsa data</b/></u>Period: {_min_dt:%Y-%m-%d} - {_max_dt:%Y-%m-%d} [{_count} rader]</br>'''))
     else:
-        _df = pl.DataFrame({k: [] for k in relevant_apple_colums})
+        _df = pl.DataFrame({k: [] for k in relevant_apple_colums}).lazy()
         all_apple_df = _df
 
     apple_df = _df
@@ -864,18 +900,21 @@ async def load_apple_df(
 def display_apple_df(apple_df, is_wasm, mo):
     # apple_df = pl.DataFrame(apple_data).with_columns(dt=pl.col('date').str.to_date())
     mo.output.append(mo.md(f'## Utforska all Apple Hälsa data'))
+    _df = apple_df.collect()
     if not is_wasm():
-        mo.output.append(mo.ui.dataframe(apple_df))
+        mo.output.append(mo.ui.dataframe(_df))
     else:
-        mo.output.append(mo.plain(apple_df))
+        mo.output.append(mo.plain(_df))
     return
 
 
 @app.cell(hide_code=True)
 def get_weight_fat_df_from_apple_df(apple_df, interval_input, mo, pl):
-    mo.stop(apple_df.height == 0 or not interval_input)
+    # Use collect() before pivot as pivot is not fully lazy in all contexts and apple_df is filtered here
+    _df_filtered = apple_df.filter(pl.col('metric').is_in(['bodymass', 'bodyfatpercentage'])).collect()
+    mo.stop(_df_filtered.height == 0 or not interval_input)
 
-    weight_fat_df = apple_df.filter(pl.col('metric').is_in(['bodymass', 'bodyfatpercentage'])).pivot('metric', index='dt', values='value', aggregate_function='mean').with_columns(pl.col('dt').dt.truncate(every=interval_input).alias('dt_interval')).group_by('dt_interval').agg(pl.mean(['bodymass', 'bodyfatpercentage']))
+    weight_fat_df = _df_filtered.pivot('metric', index='dt', values='value', aggregate_function='mean').lazy().with_columns(pl.col('dt').dt.truncate(every=interval_input).alias('dt_interval')).group_by('dt_interval').agg(pl.mean(['bodymass', 'bodyfatpercentage'])).collect()
     return (weight_fat_df,)
 
 
@@ -907,7 +946,7 @@ def _(mo):
 @app.cell(hide_code=True)
 async def read_jefit_df(file_exists, jefit_file, mo, pl, read_df):
     # Create empty and attempt load
-    jefit_df = pl.DataFrame({'dt': [], 'excercise': [], 'rep_max': [], 'sets': []}, schema={'dt': pl.datatypes.Datetime, 'excercise': pl.datatypes.String, 'rep_max': pl.datatypes.Float32, 'sets': pl.datatypes.List})
+    jefit_df = pl.DataFrame({'dt': [], 'excercise': [], 'rep_max': [], 'sets': []}, schema={'dt': pl.datatypes.Datetime, 'excercise': pl.datatypes.String, 'rep_max': pl.datatypes.Float32, 'sets': pl.datatypes.List}).lazy()
 
     if file_exists(jefit_file):
         jefit_df = await read_df(jefit_file)
@@ -921,7 +960,7 @@ async def read_jefit_df(file_exists, jefit_file, mo, pl, read_df):
 @app.cell(hide_code=True)
 def present_count_of_gym_excercises(jefit_df, mo):
     mo.output.append(mo.md('### Antal övningar över hela perioden'))
-    mo.output.append(jefit_df.group_by('excercise').len().sort(by='len', descending=True).rename({'excercise': 'Övning', 'len': 'Antal'}))
+    mo.output.append(jefit_df.group_by('excercise').len().sort(by='len', descending=True).rename({'excercise': 'Övning', 'len': 'Antal'}).collect())
     return
 
 
@@ -942,9 +981,9 @@ def define_excercises_for_graphs():
 def gym_1rm_wide_form(jefit_df, pl):
     # Wide form (not optimal for Altair)
 
-    jefit_rep_max_df = jefit_df.pivot(on='excercise', index='dt', values='rep_max', aggregate_function='max')
+    jefit_rep_max_df = jefit_df.collect().pivot(on='excercise', index='dt', values='rep_max', aggregate_function='max')
 
-    jefit_max_excercise_df = jefit_rep_max_df.group_by_dynamic('dt', every='1mo').agg(pl.exclude('dt').max())
+    jefit_max_excercise_df = jefit_rep_max_df.lazy().group_by_dynamic('dt', every='1mo').agg(pl.exclude('dt').max()).collect()
     jefit_max_excercise_df
     return
 
@@ -961,17 +1000,18 @@ def get_1rm_gym_for_all_months(exercises, jefit_df, mo, pl):
     )
 
     mo.output.append(mo.md('### Övningar 1RM'))
-    mo.output.append(jefit_max_rep_df)
+    _df = jefit_max_rep_df.collect()
+    mo.output.append(_df)
     return (jefit_max_rep_df,)
 
 
 @app.cell(hide_code=True)
 def get_bar_chart_1rm_gym_per_month(alt, exercises, jefit_max_rep_df, mo):
-    _chart = alt.Chart(jefit_max_rep_df).mark_bar(size=5).encode(
+    _chart = alt.Chart(jefit_max_rep_df.collect()).mark_bar(size=5).encode(
         column=alt.Column('yearmonth(dt):O'),
-        x=alt.X('excercise', title='Övning', sort=exercises),
+        x=alt.X('excercise:N', title='Övning', sort=exercises),
         y=alt.Y('rep_max:Q').scale(zero=True, domain=[50, 100]),
-        color=alt.Color('excercise')
+        color=alt.Color('excercise:N')
     ).properties(
         width=60,
         height=120
@@ -998,9 +1038,13 @@ def present_selectable_1rm_line_chart(
         empty="none",
     )
 
-    _benchpress_max_rep = jefit_max_rep_df.filter(pl.col('excercise') == 'Barbell Bench Press')['rep_max'].max()
+    _jefit_collected = jefit_max_rep_df.collect()
 
-    _curl_max_rep = jefit_max_rep_df.filter(pl.col('excercise') == 'Barbell Preacher Curl')['rep_max'].max()
+    _benchpress_max_rep = _jefit_collected.filter(pl.col('excercise') == 'Barbell Bench Press')['rep_max'].max()
+    _benchpress_max_rep = _benchpress_max_rep if _benchpress_max_rep is not None else 0
+
+    _curl_max_rep = _jefit_collected.filter(pl.col('excercise') == 'Barbell Preacher Curl')['rep_max'].max()
+    _curl_max_rep = _curl_max_rep if _curl_max_rep is not None else 0
 
     _max_benchpress = alt.Chart().mark_rule(color='red', strokeDash=[5, 5]).encode(
         y=alt.datum(_benchpress_max_rep),
@@ -1015,10 +1059,10 @@ def present_selectable_1rm_line_chart(
     # Add selection feature and add as params
     brush = alt.selection_interval(encodings=["x"])
 
-    jefit_chart = alt.Chart(jefit_max_rep_df).mark_line(size=3, interpolate="monotone").encode(
+    jefit_chart = alt.Chart(_jefit_collected).mark_line(size=3, interpolate="monotone").encode(
         x=alt.X('yearmonth(dt):T'),
         y=alt.Y('rep_max:Q').scale(domainMin=35),
-        color=alt.Color('excercise', title='Övning', scale=alt.Scale(range=['red', 'white', 'orange', 'yellow'])),
+        color=alt.Color('excercise:N', title='Övning', scale=alt.Scale(range=['red', 'white', 'orange', 'yellow'])),
         tooltip=[
                 alt.Tooltip("dt", title="Datum"),
                 alt.Tooltip("rep_max", title="1RM"),
@@ -1059,7 +1103,7 @@ def display_detailed_table_selected_1rm_period(
 
     mo.stop(jefit_start_ts == 0, mo.md('Markera en period i gym grafen för mer detaljer'))
     mo.output.append(mo.md('### Vald gym period'))
-    mo.output.append(jefit_df.filter(pl.col('dt').is_between(ts_to_iso(jefit_start_ts), ts_to_iso(jefit_end_ts))))
+    mo.output.append(jefit_df.filter(pl.col('dt').is_between(ts_to_iso(jefit_start_ts), ts_to_iso(jefit_end_ts))).collect())
     return
 
 
@@ -1067,7 +1111,7 @@ def display_detailed_table_selected_1rm_period(
 def display_gym_records_list(jefit_df, mo, pl):
     for e in ('Barbell Bench Press', 'Barbell Squat'):
         mo.output.append(mo.md(f'### 💪🏻🎖️ Max vikt för {e}'))
-        max_excercise_rep= jefit_df.with_columns(rep_max=pl.col('rep_max').round(0)).filter(pl.col('excercise') == e).sort(by='rep_max', descending=True).limit(n=5)
+        max_excercise_rep= jefit_df.with_columns(rep_max=pl.col('rep_max').round(0)).filter(pl.col('excercise') == e).sort(by='rep_max', descending=True).limit(n=5).collect()
         mo.output.append(max_excercise_rep)
     return
 
@@ -1354,11 +1398,12 @@ async def get_garmin_df_and_filter(
     garmin_activities = garmin_activities.select(["dt"] + [col for col in cols if col != "dt"]).sort(by="dt").filter(pl.col('distance') > 1000)
 
     if file_exists(garmin_file):
-        all_garmin_data = pl.concat([existing_df, garmin_activities], how='align').unique()
+        # Convert garmin_activities to lazy if existing_df is lazy
+        all_garmin_data = pl.concat([existing_df, garmin_activities.lazy()], how='align').unique()
     else:
         logger.info('Building empty Garmin {garmin_file}')
-        all_garmin_data = garmin_activities
-    all_garmin_data.write_parquet(garmin_file)
+        all_garmin_data = garmin_activities.lazy()
+    all_garmin_data.collect().write_parquet(garmin_file)
     return
 
 
@@ -1372,7 +1417,7 @@ async def display_garmin_df_if_it_exists(
     mo.stop(file_exists(garmin_file) is False)
 
     _df = await read_df(garmin_file)
-    mo.output.append(_df)
+    mo.output.append(_df.collect())
     return
 
 
@@ -1479,23 +1524,23 @@ async def process_apple_health_data(
     with mo.status.spinner('Processar Apple hälsa data'):
         apple_data = open_apple_health_zip(apple_health_content)
 
-    _df = pl.DataFrame(apple_data).with_columns(dt=pl.col('date').str.to_date())
+    _df = pl.DataFrame(apple_data).with_columns(dt=pl.col('date').str.to_date()).lazy()
     if file_exists(apple_file):
         _existing_df = await read_df(apple_file)
         _all_apple_data = pl.concat([_existing_df, _df], how='align').unique()
     else:
         _all_apple_data = _df
 
-    _all_apple_data.sort(by='dt').write_parquet(apple_file)
+    _all_apple_data.sort(by='dt').collect().write_parquet(apple_file)
     return
 
 
 @app.cell(hide_code=True)
-async def count_apple_health_size(apple_file, file_exists, mo, read_df):
+async def count_apple_health_size(apple_file, file_exists, mo, pl, read_df):
     _count = 0
     if file_exists(apple_file):
         _df = await read_df(apple_file)
-        _count = _df.height
+        _count = _df.select(pl.len()).collect().item()
     mo.md(f'Antal Apple Hälsa datapunkter tillänglig {_count}')
     return
 
@@ -1520,13 +1565,13 @@ def funbeat_load_as_df(funbeat_html_file, mo, pl):
     mo.stop(not funbeat_html_file.value)
     import pandas as pd
     funbeat_pd = pd.read_html(funbeat_html_file.value[0].path.as_posix()).pop()
-    funbeat_df = pl.from_pandas(funbeat_pd)
+    funbeat_df = pl.from_pandas(funbeat_pd).lazy()
     return (funbeat_df,)
 
 
 @app.cell(hide_code=True)
 def funbeat_adjust_to_garmin_df(funbeat_df, pl):
-    funbeat_df
+    # funbeat_df
     funbeat_df_modified = funbeat_df.with_columns(
         [
             pl.col('Träningsform').map_elements(lambda x: {'Löpning': 'running', 'Promenad': 'walking'}.get(x), return_dtype=pl.String).alias("activityType.typeKey"),
@@ -1559,13 +1604,13 @@ def funbeat_filter_non_relevant_data(garmin_with_funbeat, pl):
             pl.date(year=2015, month=1, day=1)) & pl.col.distance.le(900)))
                 .then(pl.col('distance') * 100)
                 .otherwise(pl.col('distance')).alias('distance')).filter((pl.col.distance.gt(100) & pl.col.duration.gt(10) & (pl.col.distance / pl.col.duration).le(10)))
-    garmin_with_funbeat_fix_dist
+    # garmin_with_funbeat_fix_dist
     return (garmin_with_funbeat_fix_dist,)
 
 
 @app.cell(hide_code=True)
 def funbeat_save_to_garmin_file(garmin_file, garmin_with_funbeat_fix_dist):
-    garmin_with_funbeat_fix_dist.write_parquet(garmin_file)
+    garmin_with_funbeat_fix_dist.collect().write_parquet(garmin_file)
     return
 
 
@@ -1615,7 +1660,7 @@ def jefit_select_file_import(mo):
 @app.cell(hide_code=True)
 def jefit_import_file(jefit_import_file, mo, pl):
     mo.stop(jefit_import_file.value is None, mo.md('Välj en Jefit JSON file att ladda upp'))
-    jefit_raw_df = pl.read_json(jefit_import_file.value[0].path).with_columns(pl.col('date').str.to_date().alias('dt')).sort(by='dt')
+    jefit_raw_df = pl.read_json(jefit_import_file.value[0].path).lazy().with_columns(pl.col('date').str.to_date().alias('dt')).sort(by='dt')
     return (jefit_raw_df,)
 
 
@@ -1630,17 +1675,17 @@ def jefit_merge_with_existing(
 ):
     mo.stop(jefit_import_file.value is None, mo.md('Välj en Jefit JSON file att ladda upp'))
     if Path(jefit_file).exists():
-        current_jefit = pl.read_parquet(jefit_file)
+        current_jefit = pl.scan_parquet(jefit_file)
         merged_jefit = pl.concat([current_jefit, jefit_raw_df], how='diagonal').unique()
-        merged_jefit.write_parquet(jefit_file)
+        merged_jefit.collect().write_parquet(jefit_file)
     else:
-        jefit_raw_df.write_parquet(jefit_file)
-    return (merged_jefit,)
+        merged_jefit = jefit_raw_df
+        merged_jefit.collect().write_parquet(jefit_file)
+    return
 
 
 @app.cell(hide_code=True)
-def jefit_display_imported(merged_jefit):
-    merged_jefit
+def jefit_display_imported():
     return
 
 
@@ -1679,7 +1724,7 @@ def import_jefit_csv(jefit_csv_input_file, mo, pl):
 
     _jefit_raw_data = ''.join(lines_to_process)
 
-    _jefit_df = pl.read_csv(_jefit_raw_data.encode())
+    _jefit_df = pl.read_csv(_jefit_raw_data.encode()).lazy()
 
     df_imported_jefit = (
         _jefit_df.with_columns(
@@ -1691,7 +1736,7 @@ def import_jefit_csv(jefit_csv_input_file, mo, pl):
         .select(['dt', 'excercise', 'rep_max', 'sets'])
     )
 
-    df_imported_jefit
+    # df_imported_jefit
     return (df_imported_jefit,)
 
 
@@ -1708,10 +1753,10 @@ def save_jefit_csv_to_file(
     _merged_jefit_with_imported_df
 
     if Path(jefit_file).exists():
-        _merged_jefit_with_imported_df.write_parquet(jefit_file)
+        _merged_jefit_with_imported_df.collect().write_parquet(jefit_file)
         mo.output.append(f'Sparade data till {jefit_file}')
     else:
-        _merged_jefit_with_imported_df.write_parquet(jefit_file)
+        _merged_jefit_with_imported_df.collect().write_parquet(jefit_file)
     return
 
 
