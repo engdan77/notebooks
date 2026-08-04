@@ -21,7 +21,7 @@
 
 import marimo
 
-__generated_with = "0.23.6"
+__generated_with = "0.23.16"
 app = marimo.App(
     width="columns",
     layout_file="layouts/daniels_health.grid.json",
@@ -37,7 +37,7 @@ def _(mo):
 
     För mer detaljer gå [hit](https://github.com/engdan77/notebooks) eller för andra utvecklade projekt besök [Daniels Github](https://github.com/engdan77).
 
-    💾 Källkod: [här](https://github.com/engdan77/notebooks/blob/main/apps/daniels_health.py) (2025.5.2)
+    💾 Källkod: [här](https://github.com/engdan77/notebooks/blob/main/apps/daniels_health.py) (2026.7.1)
     ✉️ E-post: [daniel@engvalls.eu](mailto:daniel@engvalls.eu)
     """)
     return
@@ -1242,7 +1242,11 @@ def get_garmin_raw_data(
                     continue
                 if isinstance(dt_, datetime.date):
                     dt_ = dt_.isoformat()
-                activities = cached_get_garmin_activites(dt_)
+                try:
+                    activities = cached_get_garmin_activites(dt_)
+                except TimeoutError:
+                    logger.debug(f'Timeout error while reading cached Garmin activites, skip to next {dt_}')
+                    continue
 
                 # Adding another API call to get heart rate zones
                 for activity in activities.get('ActivitiesForDay', {}).get('payload', []):
@@ -1395,7 +1399,7 @@ async def get_garmin_df_and_filter(
         logger.info(f'Loading existing Garmin {garmin_file} and updating with existing')
         existing_df = await read_df(garmin_file)
         logger.info('Removing existing dates from the query to Garmin')
-        existing_dates = set(existing_df.with_columns(date=pl.col('dt').dt.date())['date'])
+        existing_dates = set(existing_df.collect().with_columns(date=pl.col('dt').dt.date())['date'])
         date_range_iso = remove_existing_dates(date_range_iso, existing_dates)
 
     _raw = get_raw_garmin_data(dt=date_range_iso)
